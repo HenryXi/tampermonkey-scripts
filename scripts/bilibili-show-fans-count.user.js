@@ -1,11 +1,11 @@
 // ==UserScript==
 // @name         B站显示UP主粉丝数
 // @namespace    https://github.com/HenryXi/tampermonkey-scripts
-// @version      1.0.0
+// @version      1.0.3
 // @description  在B站首页每个视频卡片下方显示UP主的粉丝数
 // @author       HenryXi
-// @match        https://www.bilibili.com/
-// @match        https://bilibili.com/
+// @match        https://www.bilibili.com/*
+// @match        https://bilibili.com/*
 // @grant        GM_xmlhttpRequest
 // @connect      api.bilibili.com
 // @run-at       document-idle
@@ -14,16 +14,15 @@
 (function () {
     'use strict';
 
+    // 只在首页运行
+    if (location.pathname !== '/') return;
+
     // mid -> 粉丝数 缓存
     const cache = new Map();
 
     function formatNumber(n) {
-        if (n >= 100000000) {
-            return (n / 100000000).toFixed(1) + '亿';
-        } else if (n >= 10000) {
-            return (n / 10000).toFixed(1) + '万';
-        }
-        return String(n);
+        if (n < 1000) return '0w';
+        return (n / 10000).toFixed(1) + 'w';
     }
 
     function fetchFollowers(mid) {
@@ -61,36 +60,27 @@
 
     function processCard(card) {
         if (card.dataset.fansLoaded) return;
+
+        // 找UP主链接（href 为 //space.bilibili.com/{mid}）
+        const ownerLink = card.querySelector('a.bili-video-card__info--owner');
+        // 卡片还是 skeleton，跳过但不标记，等内容加载后再处理
+        if (!ownerLink) return;
+
         card.dataset.fansLoaded = 'true';
 
-        // 从 space.bilibili.com/{mid} 链接中提取 mid
-        const authorLink = card.querySelector('a[href*="space.bilibili.com"]');
-        if (!authorLink) return;
+        const mid = ownerLink.href.match(/space\.bilibili\.com\/(\d+)/)?.[1];
+        if (!mid) return;
 
-        const match = authorLink.href.match(/space\.bilibili\.com\/(\d+)/);
-        if (!match) return;
-
-        const mid = match[1];
-
-        // 找到 UP 主信息区域，注入粉丝数标签
-        const authorEl = card.querySelector('.bili-video-card__info--author');
-        if (!authorEl) return;
-
-        const fansSpan = document.createElement('span');
-        fansSpan.className = 'bili-fans-count';
-        fansSpan.style.cssText = `
-            font-size: 11px;
-            color: #999;
-            margin-left: 4px;
-            white-space: nowrap;
-        `;
-        fansSpan.textContent = '粉丝：…';
-        authorEl.appendChild(fansSpan);
+        // 在 ownerLink 内部日期之后追加粉丝数，复用日期的样式类
+        const fansEl = document.createElement('span');
+        fansEl.className = 'bili-video-card__info--date';
+        fansEl.textContent = '· …';
+        ownerLink.appendChild(fansEl);
 
         fetchFollowers(mid).then(follower => {
-            fansSpan.textContent = '粉丝：' + formatNumber(follower);
+            fansEl.textContent = '· ' + formatNumber(follower);
         }).catch(() => {
-            fansSpan.remove();
+            fansEl.remove();
         });
     }
 
@@ -98,13 +88,10 @@
         document.querySelectorAll('.bili-video-card:not([data-fans-loaded])').forEach(processCard);
     }
 
-    // 初始处理
-    processAllCards();
+    // 延迟初始处理，等 Vue 渲染完成
+    setTimeout(processAllCards, 1000);
 
     // 监听动态加载的新卡片
-    const observer = new MutationObserver(() => {
-        processAllCards();
-    });
-
+    const observer = new MutationObserver(processAllCards);
     observer.observe(document.body, { childList: true, subtree: true });
 })();
