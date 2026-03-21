@@ -8,6 +8,7 @@
 |----------|----------|----------|
 | [B站显示UP主粉丝数](scripts/bilibili-show-fans-count.user.js) | bilibili.com 首页 | 在首页每个视频卡片下方显示UP主的粉丝数 |
 | [B站自定义推荐视频](scripts/bilibili-custom-recommendations.user.js) | bilibili.com 视频播放页 | 在播放页右侧推荐区域添加指定UP主的视频 |
+| [B站课程隐藏购买提醒](scripts/bilibili-cheese-remove-toast.user.js) | bilibili.com 课程播放页 | 隐藏课程播放页的购买提醒弹窗 |
 
 ## 使用方法
 
@@ -22,5 +23,6 @@ tampermonkey-scripts/
 ├── README.md       # 本说明文件
 └── scripts/
     ├── bilibili-show-fans-count.user.js          # B站首页显示UP主粉丝数
-    └── bilibili-custom-recommendations.user.js   # B站播放页自定义推荐视频
+    ├── bilibili-custom-recommendations.user.js   # B站播放页自定义推荐视频
+    └── bilibili-cheese-remove-toast.user.js      # B站课程播放页隐藏购买提醒
 ```
