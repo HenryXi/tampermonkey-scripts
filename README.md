@@ -4,11 +4,10 @@
 
 ## 脚本列表
 
-> 目前暂无脚本，后续添加后在此处更新说明。
-
 | 脚本名称 | 适用网站 | 功能描述 |
 |----------|----------|----------|
 | [B站显示UP主粉丝数](scripts/bilibili-show-fans-count.user.js) | bilibili.com 首页 | 在首页每个视频卡片下方显示UP主的粉丝数 |
+| [B站自定义推荐视频](scripts/bilibili-custom-recommendations.user.js) | bilibili.com 视频播放页 | 在播放页右侧推荐区域添加指定UP主的视频 |
 
 ## 使用方法
 
@@ -22,5 +21,6 @@
 tampermonkey-scripts/
 ├── README.md       # 本说明文件
 └── scripts/
-    └── bilibili-show-fans-count.user.js  # B站首页显示UP主粉丝数
+    ├── bilibili-show-fans-count.user.js          # B站首页显示UP主粉丝数
+    └── bilibili-custom-recommendations.user.js   # B站播放页自定义推荐视频
 ```
