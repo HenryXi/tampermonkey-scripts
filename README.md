@@ -8,7 +8,7 @@
 
 | 脚本名称 | 适用网站 | 功能描述 |
 |----------|----------|----------|
-| -        | -        | -        |
+| [B站显示UP主粉丝数](scripts/bilibili-show-fans-count.user.js) | bilibili.com 首页 | 在首页每个视频卡片下方显示UP主的粉丝数 |
 
 ## 使用方法
 
@@ -21,5 +21,6 @@
 ```
 tampermonkey-scripts/
 ├── README.md       # 本说明文件
-└── scripts/        # 脚本存放目录
+└── scripts/
+    └── bilibili-show-fans-count.user.js  # B站首页显示UP主粉丝数
 ```
