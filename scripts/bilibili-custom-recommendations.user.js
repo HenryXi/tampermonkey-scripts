@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         B站自定义推荐视频
 // @namespace    http://tampermonkey.net/
-// @version      1.5.2
+// @version      1.5.3
 // @description  在B站视频播放页右侧推荐区域添加指定UP主的视频
 // @author       You
 // @match        https://www.bilibili.com/video/*
@@ -378,7 +378,11 @@
                             if (data.code === 0 && data.data && data.data.list && data.data.list.vlist) {
                                 resolve(data.data.list.vlist);
                             } else {
-                                console.warn(`获取UP主 ${mid} 的视频失败:`, data.message || data.code);
+                                if (data.message && data.message.includes('banned')) {
+                                    console.warn(`⚠️ UP主 ${mid} 请求被拦截 (${data.message})，可能是请求过快或需要更高权限`);
+                                } else {
+                                    console.warn(`⚠️ 获取UP主 ${mid} 的视频失败:`, data.message || data.code);
+                                }
                                 resolve([]);
                             }
                         } catch (e) {
@@ -737,8 +741,22 @@
             // 获取所有UP主的视频
             console.log(`📥 开始获取 ${TARGET_UP_MIDS.length} 个UP主的视频...`);
 
-            const videoPromises = TARGET_UP_MIDS.map(mid => fetchUploaderVideos(mid, wbiKeys));
-            const results = await Promise.all(videoPromises);
+            // 添加延迟函数，避免请求过快被ban
+            const delay = (ms) => new Promise(resolve => setTimeout(resolve, ms));
+
+            // 逐个获取UP主视频，每次请求间隔500ms
+            const results = [];
+            for (let i = 0; i < TARGET_UP_MIDS.length; i++) {
+                const mid = TARGET_UP_MIDS[i];
+                console.log(`正在获取UP主 ${mid} (${i + 1}/${TARGET_UP_MIDS.length})...`);
+                const videos = await fetchUploaderVideos(mid, wbiKeys);
+                results.push(videos);
+
+                // 如果不是最后一个，等待500ms再请求下一个
+                if (i < TARGET_UP_MIDS.length - 1) {
+                    await delay(500);
+                }
+            }
 
             // 合并所有视频
             results.forEach((videos, index) => {
