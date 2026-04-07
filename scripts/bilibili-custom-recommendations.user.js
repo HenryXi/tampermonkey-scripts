@@ -293,6 +293,15 @@
                 url: 'https://api.bilibili.com/x/web-interface/nav',
                 onload: function(response) {
                     try {
+                        // 检查响应是否是 HTML
+                        const responseText = response.responseText.trim();
+                        if (responseText.startsWith('<!DOCTYPE') || responseText.startsWith('<html')) {
+                            console.error('❌ 获取WBI密钥失败: API返回了HTML页面，可能需要登录或访问受限');
+                            console.log('响应状态:', response.status);
+                            reject(new Error('API返回HTML而非JSON，可能需要登录'));
+                            return;
+                        }
+
                         const data = JSON.parse(response.responseText);
                         if (data.code === 0) {
                             const img_url = data.data.wbi_img.img_url;
@@ -301,9 +310,12 @@
                             const sub_key = sub_url.substring(sub_url.lastIndexOf('/') + 1, sub_url.lastIndexOf('.'));
                             resolve({ img_key, sub_key });
                         } else {
-                            reject(new Error('获取WBI密钥失败'));
+                            console.error('❌ 获取WBI密钥失败:', data.message || data.code);
+                            reject(new Error('获取WBI密钥失败: ' + (data.message || data.code)));
                         }
                     } catch (e) {
+                        console.error('❌ 解析WBI密钥响应失败:', e);
+                        console.log('响应内容前200字符:', response.responseText.substring(0, 200));
                         reject(e);
                     }
                 },
@@ -342,15 +354,25 @@
                     },
                     onload: function(response) {
                         try {
+                            // 检查响应是否是 HTML（通常是错误页面）
+                            const responseText = response.responseText.trim();
+                            if (responseText.startsWith('<!DOCTYPE') || responseText.startsWith('<html')) {
+                                console.warn(`⚠️ UP主 ${mid} 的 API 返回了 HTML 页面，可能是访问受限或需要登录`);
+                                console.log('响应状态:', response.status);
+                                resolve([]);
+                                return;
+                            }
+
                             const data = JSON.parse(response.responseText);
                             if (data.code === 0 && data.data && data.data.list && data.data.list.vlist) {
                                 resolve(data.data.list.vlist);
                             } else {
-                                console.warn(`获取UP主 ${mid} 的视频失败:`, data);
+                                console.warn(`获取UP主 ${mid} 的视频失败:`, data.message || data.code);
                                 resolve([]);
                             }
                         } catch (e) {
                             console.error(`解析UP主 ${mid} 的数据失败:`, e);
+                            console.log('响应内容前200字符:', response.responseText.substring(0, 200));
                             resolve([]);
                         }
                     },
@@ -716,7 +738,10 @@
             console.log(`📊 总共获取到 ${allVideos.length} 个视频`);
 
             if (allVideos.length === 0) {
-                console.warn('⚠️ 未获取到任何视频，请检查UP主ID是否正确');
+                console.warn('⚠️ 未获取到任何视频，可能原因：');
+                console.warn('   1. UP主ID不正确');
+                console.warn('   2. B站API需要登录才能访问');
+                console.warn('   3. 请确保已登录B站账号');
                 return;
             }
 
@@ -751,6 +776,11 @@
             }, 500);
         } catch (error) {
             console.error('❌ 脚本执行失败:', error);
+            console.error('💡 可能的解决方案：');
+            console.error('   1. 确保已登录B站账号');
+            console.error('   2. 检查浏览器控制台是否有其他错误');
+            console.error('   3. 尝试刷新页面重新加载脚本');
+            console.error('   4. 检查UP主ID是否正确');
         }
     }
 
