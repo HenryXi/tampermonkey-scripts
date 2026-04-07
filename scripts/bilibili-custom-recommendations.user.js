@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         B站自定义推荐视频
 // @namespace    http://tampermonkey.net/
-// @version      1.5.1
+// @version      1.5.2
 // @description  在B站视频播放页右侧推荐区域添加指定UP主的视频
 // @author       You
 // @match        https://www.bilibili.com/video/*
@@ -291,6 +291,13 @@
             GM_xmlhttpRequest({
                 method: 'GET',
                 url: 'https://api.bilibili.com/x/web-interface/nav',
+                headers: {
+                    'Referer': 'https://www.bilibili.com',
+                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                    'Accept': 'application/json, text/plain, */*',
+                    'Accept-Language': 'zh-CN,zh;q=0.9,en;q=0.8'
+                },
+                anonymous: false, // 允许发送 Cookie
                 onload: function(response) {
                     try {
                         // 检查响应是否是 HTML
@@ -350,8 +357,12 @@
                     url: url,
                     headers: {
                         'Referer': 'https://www.bilibili.com',
-                        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+                        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                        'Origin': 'https://www.bilibili.com',
+                        'Accept': 'application/json, text/plain, */*',
+                        'Accept-Language': 'zh-CN,zh;q=0.9,en;q=0.8'
                     },
+                    anonymous: false, // 允许发送 Cookie
                     onload: function(response) {
                         try {
                             // 检查响应是否是 HTML（通常是错误页面）
