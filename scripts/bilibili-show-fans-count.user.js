@@ -1,11 +1,12 @@
 // ==UserScript==
 // @name         B站显示UP主粉丝数
 // @namespace    https://github.com/HenryXi/tampermonkey-scripts
-// @version      1.0.3
-// @description  在B站首页每个视频卡片下方显示UP主的粉丝数
+// @version      1.1.0
+// @description  在B站首页和搜索页每个视频卡片下方显示UP主的粉丝数
 // @author       HenryXi
 // @match        https://www.bilibili.com/*
 // @match        https://bilibili.com/*
+// @match        https://search.bilibili.com/*
 // @grant        GM_xmlhttpRequest
 // @connect      api.bilibili.com
 // @run-at       document-idle
@@ -14,8 +15,10 @@
 (function () {
     'use strict';
 
-    // 只在首页运行
-    if (location.pathname !== '/') return;
+    // 只在首页和搜索页运行
+    const isHome = location.hostname === 'www.bilibili.com' && location.pathname === '/';
+    const isSearch = location.hostname === 'search.bilibili.com';
+    if (!isHome && !isSearch) return;
 
     // mid -> 粉丝数 缓存
     const cache = new Map();
@@ -58,11 +61,21 @@
         });
     }
 
+    // 首页卡片：UP主链接选择器
+    const HOME_OWNER_LINK = 'a.bili-video-card__info--owner';
+    // 搜索页卡片：UP主链接选择器（搜索页 .up-name 或通用 space 链接）
+    const SEARCH_OWNER_LINK = 'a.up-name, a[href*="space.bilibili.com"]';
+
     function processCard(card) {
         if (card.dataset.fansLoaded) return;
 
-        // 找UP主链接（href 为 //space.bilibili.com/{mid}）
-        const ownerLink = card.querySelector('a.bili-video-card__info--owner');
+        // 首页优先，再尝试搜索页选择器
+        let ownerLink = card.querySelector(HOME_OWNER_LINK);
+        let isSearchCard = false;
+        if (!ownerLink) {
+            ownerLink = card.querySelector(SEARCH_OWNER_LINK);
+            isSearchCard = true;
+        }
         // 卡片还是 skeleton，跳过但不标记，等内容加载后再处理
         if (!ownerLink) return;
 
@@ -71,9 +84,14 @@
         const mid = ownerLink.href.match(/space\.bilibili\.com\/(\d+)/)?.[1];
         if (!mid) return;
 
-        // 在 ownerLink 内部日期之后追加粉丝数，复用日期的样式类
         const fansEl = document.createElement('span');
-        fansEl.className = 'bili-video-card__info--date';
+        if (isSearchCard) {
+            // 搜索页没有现成的日期样式类，直接内联小字灰色样式
+            fansEl.style.cssText = 'font-size:12px;color:#999;margin-left:4px;';
+        } else {
+            // 首页复用日期样式类
+            fansEl.className = 'bili-video-card__info--date';
+        }
         fansEl.textContent = '· …';
         ownerLink.appendChild(fansEl);
 
@@ -85,7 +103,11 @@
     }
 
     function processAllCards() {
-        document.querySelectorAll('.bili-video-card:not([data-fans-loaded])').forEach(processCard);
+        // 首页卡片 + 搜索页卡片（两者都可能含 .bili-video-card）
+        const selector = isSearch
+            ? '.video-list-item:not([data-fans-loaded]), .bili-video-card:not([data-fans-loaded])'
+            : '.bili-video-card:not([data-fans-loaded])';
+        document.querySelectorAll(selector).forEach(processCard);
     }
 
     // 延迟初始处理，等 Vue 渲染完成
