@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         B站显示UP主粉丝数
 // @namespace    https://github.com/HenryXi/tampermonkey-scripts
-// @version      1.1.0
+// @version      1.2.0
 // @description  在B站首页和搜索页每个视频卡片下方显示UP主的粉丝数
 // @author       HenryXi
 // @match        https://www.bilibili.com/*
@@ -61,37 +61,23 @@
         });
     }
 
-    // 首页卡片：UP主链接选择器
-    const HOME_OWNER_LINK = 'a.bili-video-card__info--owner';
-    // 搜索页卡片：UP主链接选择器（搜索页 .up-name 或通用 space 链接）
-    const SEARCH_OWNER_LINK = 'a.up-name, a[href*="space.bilibili.com"]';
-
     function processCard(card) {
         if (card.dataset.fansLoaded) return;
 
-        // 首页优先，再尝试搜索页选择器
-        let ownerLink = card.querySelector(HOME_OWNER_LINK);
-        let isSearchCard = false;
-        if (!ownerLink) {
-            ownerLink = card.querySelector(SEARCH_OWNER_LINK);
-            isSearchCard = true;
-        }
+        // 首页和搜索页均使用相同的 DOM 结构
+        const ownerLink = card.querySelector('a.bili-video-card__info--owner');
         // 卡片还是 skeleton，跳过但不标记，等内容加载后再处理
         if (!ownerLink) return;
 
         card.dataset.fansLoaded = 'true';
 
-        const mid = ownerLink.href.match(/space\.bilibili\.com\/(\d+)/)?.[1];
+        // href 可能是协议相对 URL（//space.bilibili.com/mid），用 getAttribute 更稳健
+        const href = ownerLink.getAttribute('href') || '';
+        const mid = href.match(/space\.bilibili\.com\/(\d+)/)?.[1];
         if (!mid) return;
 
         const fansEl = document.createElement('span');
-        if (isSearchCard) {
-            // 搜索页没有现成的日期样式类，直接内联小字灰色样式
-            fansEl.style.cssText = 'font-size:12px;color:#999;margin-left:4px;';
-        } else {
-            // 首页复用日期样式类
-            fansEl.className = 'bili-video-card__info--date';
-        }
+        fansEl.className = 'bili-video-card__info--date';
         fansEl.textContent = '· …';
         ownerLink.appendChild(fansEl);
 
@@ -103,15 +89,11 @@
     }
 
     function processAllCards() {
-        // 首页卡片 + 搜索页卡片（两者都可能含 .bili-video-card）
-        const selector = isSearch
-            ? '.video-list-item:not([data-fans-loaded]), .bili-video-card:not([data-fans-loaded])'
-            : '.bili-video-card:not([data-fans-loaded])';
-        document.querySelectorAll(selector).forEach(processCard);
+        document.querySelectorAll('.bili-video-card:not([data-fans-loaded])').forEach(processCard);
     }
 
     // 延迟初始处理，等 Vue 渲染完成
-    setTimeout(processAllCards, 1000);
+    setTimeout(processAllCards, 1500);
 
     // 监听动态加载的新卡片
     const observer = new MutationObserver(processAllCards);
