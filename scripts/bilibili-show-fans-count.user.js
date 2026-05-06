@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         B站显示UP主粉丝数
 // @namespace    https://github.com/HenryXi/tampermonkey-scripts
-// @version      1.2.0
+// @version      1.2.1
 // @description  在B站首页和搜索页每个视频卡片下方显示UP主的粉丝数
 // @author       HenryXi
 // @match        https://www.bilibili.com/*
