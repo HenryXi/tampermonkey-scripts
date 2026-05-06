@@ -16,7 +16,7 @@
     'use strict';
 
     // 只在首页和搜索页运行
-    const isHome = location.hostname === 'www.bilibili.com' && location.pathname === '/';
+    const isHome = location.hostname === 'www.bilibili.com';
     const isSearch = location.hostname === 'search.bilibili.com';
     if (!isHome && !isSearch) return;
 
