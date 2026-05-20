@@ -104,14 +104,17 @@
         }, 10);
     }
 
-    // 全局禁用迷你播放器：监听 data-screen 属性变为 mini 时直接移出 DOM
+    // 全局禁用迷你播放器：监听 data-screen 变为 mini 时立刻改回 normal
     new MutationObserver((mutations) => {
         for (const mutation of mutations) {
             if (mutation.type === 'attributes' && mutation.attributeName === 'data-screen') {
                 const node = mutation.target;
-                if (node.dataset.screen === 'mini' && node.parentNode) {
-                    // 记录父节点，方便后续恢复（切回普通模式时B站会重新插入）
-                    node.remove();
+                if (node.dataset.screen === 'mini') {
+                    node.dataset.screen = 'normal';
+                    // 同时清除B站注入的定位style
+                    node.style.removeProperty('right');
+                    node.style.removeProperty('bottom');
+                    node.style.removeProperty('position');
                 }
             }
         }
