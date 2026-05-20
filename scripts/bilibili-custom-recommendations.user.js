@@ -62,14 +62,7 @@
                 display: none !important;
             }
             /* 全局禁用迷你播放器浮窗 */
-            .bpx-player-mini-warp,
-            .bpx-player-float-wrap,
-            [class*="mini-player"],
-            [class*="miniPlayer"],
-            [class*="mini_player"],
-            [class*="float-player"],
-            [class*="floatPlayer"],
-            [class*="small-player"] {
+            .bpx-player-container[data-screen="mini"] {
                 display: none !important;
             }
         `;
@@ -102,14 +95,7 @@
                         display: none !important;
                     }
                     /* 全局禁用迷你播放器浮窗 */
-                    .bpx-player-mini-warp,
-                    .bpx-player-float-wrap,
-                    [class*="mini-player"],
-                    [class*="miniPlayer"],
-                    [class*="mini_player"],
-                    [class*="float-player"],
-                    [class*="floatPlayer"],
-                    [class*="small-player"] {
+                    .bpx-player-container[data-screen="mini"] {
                         display: none !important;
                     }
                 `;
@@ -118,22 +104,25 @@
         }, 10);
     }
 
-    // 全局禁用迷你播放器：监听DOM新增节点，发现迷你播放器立即隐藏
+    // 全局禁用迷你播放器：监听 data-screen 属性变为 mini 时立即隐藏
     new MutationObserver((mutations) => {
         for (const mutation of mutations) {
-            for (const node of mutation.addedNodes) {
-                if (node.nodeType !== 1) continue;
-                const cls = (node.className || '').toString();
-                if (/mini|float.*player|small.*player/i.test(cls)) {
+            // 监听属性变化（data-screen 从 normal 切换到 mini）
+            if (mutation.type === 'attributes' && mutation.attributeName === 'data-screen') {
+                const node = mutation.target;
+                if (node.dataset.screen === 'mini') {
                     node.style.setProperty('display', 'none', 'important');
                 }
-                // 检查子节点
-                node.querySelectorAll('[class*="mini"],[class*="float-player"],[class*="small-player"]').forEach(el => {
-                    el.style.setProperty('display', 'none', 'important');
-                });
+            }
+            // 监听新增节点
+            for (const node of mutation.addedNodes) {
+                if (node.nodeType !== 1) continue;
+                if (node.dataset && node.dataset.screen === 'mini') {
+                    node.style.setProperty('display', 'none', 'important');
+                }
             }
         }
-    }).observe(document.documentElement, { childList: true, subtree: true });
+    }).observe(document.documentElement, { childList: true, subtree: true, attributes: true, attributeFilter: ['data-screen'] });
 
     // WBI签名相关
     const mixinKeyEncTab = [
@@ -846,52 +835,7 @@
 
         playerWrap.appendChild(mask);
 
-        // 隐藏迷你播放器（滚动时右下角浮窗）
-        // 用宽泛的CSS选择器覆盖各种可能的class
-        const miniStyle = document.createElement('style');
-        miniStyle.id = 'blocked-mini-player-style';
-        miniStyle.textContent = `
-            .bpx-player-mini-warp,
-            .mini-player,
-            .bpx-player-mini,
-            [class*="mini-player"],
-            [class*="miniPlayer"],
-            [class*="mini_player"],
-            .bpx-player-float-wrap,
-            [class*="float-player"],
-            [class*="floatPlayer"],
-            [class*="float_player"],
-            [class*="small-player"],
-            [class*="smallPlayer"] {
-                display: none !important;
-            }
-        `;
-        document.head.appendChild(miniStyle);
-
-        // 用 MutationObserver 监听DOM，捕获动态插入的迷你播放器
-        const miniObserver = new MutationObserver((mutations) => {
-            for (const mutation of mutations) {
-                for (const node of mutation.addedNodes) {
-                    if (node.nodeType !== 1) continue;
-                    const style = getComputedStyle(node);
-                    // 右下角fixed定位的新元素，大概率是迷你播放器
-                    if (style.position === 'fixed' && node !== mask) {
-                        const rect = node.getBoundingClientRect();
-                        if (rect.bottom > window.innerHeight * 0.5 && rect.right > window.innerWidth * 0.5) {
-                            node.style.setProperty('display', 'none', 'important');
-                        }
-                    }
-                    // 也检查子元素
-                    node.querySelectorAll && node.querySelectorAll('[class*="mini"],[class*="float"],[class*="small-play"]').forEach(el => {
-                        el.style.setProperty('display', 'none', 'important');
-                    });
-                }
-            }
-        });
-        miniObserver.observe(document.body, { childList: true, subtree: true });
-
-        // 把observer存起来，清理时断开
-        window._blockedMiniObserver = miniObserver;
+        // 迷你播放器由全局 CSS + MutationObserver 统一处理
 
         // 暂停视频
         const videoEl = document.querySelector('video');
@@ -909,12 +853,6 @@
     function removeBlockedOverlay() {
         const overlay = document.getElementById('blocked-video-overlay');
         if (overlay) overlay.remove();
-        const miniStyle = document.getElementById('blocked-mini-player-style');
-        if (miniStyle) miniStyle.remove();
-        if (window._blockedMiniObserver) {
-            window._blockedMiniObserver.disconnect();
-            window._blockedMiniObserver = null;
-        }
     }
 
     // 检查当前视频是否属于被屏蔽的UP主
