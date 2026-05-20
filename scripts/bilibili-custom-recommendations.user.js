@@ -104,25 +104,18 @@
         }, 10);
     }
 
-    // 全局禁用迷你播放器：监听 data-screen 属性变为 mini 时立即隐藏
+    // 全局禁用迷你播放器：监听 data-screen 属性变为 mini 时直接移出 DOM
     new MutationObserver((mutations) => {
         for (const mutation of mutations) {
-            // 监听属性变化（data-screen 从 normal 切换到 mini）
             if (mutation.type === 'attributes' && mutation.attributeName === 'data-screen') {
                 const node = mutation.target;
-                if (node.dataset.screen === 'mini') {
-                    node.style.setProperty('display', 'none', 'important');
-                }
-            }
-            // 监听新增节点
-            for (const node of mutation.addedNodes) {
-                if (node.nodeType !== 1) continue;
-                if (node.dataset && node.dataset.screen === 'mini') {
-                    node.style.setProperty('display', 'none', 'important');
+                if (node.dataset.screen === 'mini' && node.parentNode) {
+                    // 记录父节点，方便后续恢复（切回普通模式时B站会重新插入）
+                    node.remove();
                 }
             }
         }
-    }).observe(document.documentElement, { childList: true, subtree: true, attributes: true, attributeFilter: ['data-screen'] });
+    }).observe(document.documentElement, { subtree: true, attributes: true, attributeFilter: ['data-screen'] });
 
     // WBI签名相关
     const mixinKeyEncTab = [
