@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         B站自定义推荐视频
 // @namespace    http://tampermonkey.net/
-// @version      1.5.3
-// @description  在B站视频播放页右侧推荐区域添加指定UP主的视频
+// @version      1.6.0
+// @description  在B站视频播放页右侧推荐区域添加指定UP主的视频；屏蔽特定UP主的视频播放
 // @author       You
 // @match        https://www.bilibili.com/video/*
 // @grant        GM_xmlhttpRequest
@@ -27,6 +27,11 @@
     const RECOMMEND_COUNT = 15;
     // 原始推荐视频保留数量
     const ORIGINAL_RECOMMEND_COUNT = 0;
+
+    // 屏蔽的UP主UID列表（这些UP主的视频将无法播放，显示"视频已下架"）
+    const BLOCKED_UP_MIDS = [
+        // 在这里填入要屏蔽的UP主UID，例如：'1111'
+    ];
     // ==============================
 
     // 存储获取到的视频
@@ -728,9 +733,155 @@
         return true;
     }
 
+    // ========== 屏蔽UP主功能 ==========
+
+    // 获取当前视频的UP主mid（通过B站API）
+    function getCurrentVideoBvid() {
+        const match = location.pathname.match(/\/video\/(BV[a-zA-Z0-9]+)/);
+        return match ? match[1] : null;
+    }
+
+    // 通过API获取视频信息，返回UP主mid
+    function fetchVideoOwnerMid(bvid) {
+        return new Promise((resolve) => {
+            GM_xmlhttpRequest({
+                method: 'GET',
+                url: `https://api.bilibili.com/x/web-interface/view?bvid=${bvid}`,
+                headers: {
+                    'Referer': 'https://www.bilibili.com',
+                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+                },
+                anonymous: false,
+                onload: function(response) {
+                    try {
+                        const data = JSON.parse(response.responseText);
+                        if (data.code === 0 && data.data && data.data.owner) {
+                            resolve(String(data.data.owner.mid));
+                        } else {
+                            resolve(null);
+                        }
+                    } catch (e) {
+                        resolve(null);
+                    }
+                },
+                onerror: function() { resolve(null); }
+            });
+        });
+    }
+
+    // 在播放器上方覆盖一个"视频已下架"的遮罩
+    function showBlockedOverlay() {
+        // 避免重复添加
+        if (document.getElementById('blocked-video-overlay')) return;
+
+        const overlay = document.createElement('div');
+        overlay.id = 'blocked-video-overlay';
+        overlay.style.cssText = `
+            position: fixed;
+            top: 0; left: 0; right: 0; bottom: 0;
+            z-index: 999999;
+            pointer-events: none;
+        `;
+
+        // 找到播放器容器，在其上方覆盖
+        const playerWrap = document.querySelector('#bilibili-player, .bpx-player-container, #player_module');
+        if (!playerWrap) return;
+
+        const rect = playerWrap.getBoundingClientRect();
+
+        const mask = document.createElement('div');
+        mask.style.cssText = `
+            position: absolute;
+            top: ${rect.top + window.scrollY}px;
+            left: ${rect.left + window.scrollX}px;
+            width: ${rect.width}px;
+            height: ${rect.height}px;
+            background: #0a0a0a;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            pointer-events: all;
+            z-index: 999999;
+        `;
+
+        mask.innerHTML = `
+            <div style="text-align: center; color: #999; user-select: none;">
+                <div style="font-size: 64px; margin-bottom: 16px; opacity: 0.4;">📭</div>
+                <div style="font-size: 20px; font-weight: bold; color: #ccc; margin-bottom: 8px;">视频已下架</div>
+                <div style="font-size: 14px; color: #666;">根据相关规定，该视频无法播放</div>
+            </div>
+        `;
+
+        overlay.appendChild(mask);
+        document.body.appendChild(overlay);
+
+        // 暂停视频
+        const videoEl = document.querySelector('video');
+        if (videoEl) {
+            videoEl.pause();
+            videoEl.volume = 0;
+            // 持续阻止播放
+            videoEl.addEventListener('play', function() { videoEl.pause(); }, true);
+        }
+
+        // 窗口滚动或resize时更新遮罩位置
+        function updatePosition() {
+            const r = playerWrap.getBoundingClientRect();
+            mask.style.top = (r.top + window.scrollY) + 'px';
+            mask.style.left = (r.left + window.scrollX) + 'px';
+            mask.style.width = r.width + 'px';
+            mask.style.height = r.height + 'px';
+        }
+        window.addEventListener('scroll', updatePosition);
+        window.addEventListener('resize', updatePosition);
+
+        console.log('🚫 已屏蔽该UP主的视频');
+    }
+
+    // 移除屏蔽遮罩（切换到其他视频时清理）
+    function removeBlockedOverlay() {
+        const overlay = document.getElementById('blocked-video-overlay');
+        if (overlay) overlay.remove();
+    }
+
+    // 检查当前视频是否属于被屏蔽的UP主
+    async function checkAndBlockVideo() {
+        if (BLOCKED_UP_MIDS.length === 0) return;
+
+        removeBlockedOverlay();
+
+        const bvid = getCurrentVideoBvid();
+        if (!bvid) return;
+
+        const ownerMid = await fetchVideoOwnerMid(bvid);
+        if (!ownerMid) return;
+
+        if (BLOCKED_UP_MIDS.includes(ownerMid)) {
+            console.log(`🚫 检测到被屏蔽的UP主 (mid: ${ownerMid})，阻止播放`);
+            // 等待播放器渲染完成再覆盖
+            let retries = 0;
+            const tryOverlay = setInterval(() => {
+                retries++;
+                const playerWrap = document.querySelector('#bilibili-player, .bpx-player-container, #player_module');
+                if (playerWrap) {
+                    clearInterval(tryOverlay);
+                    showBlockedOverlay();
+                } else if (retries >= 20) {
+                    clearInterval(tryOverlay);
+                }
+            }, 300);
+        }
+    }
+
+    // ======================================
+
     // 主函数
     async function main() {
         console.log('🚀 B站自定义推荐脚本启动...');
+
+        // 检查并屏蔽特定UP主的视频（并行执行，不阻塞推荐功能）
+        checkAndBlockVideo();
 
         try {
             // 先获取WBI密钥
