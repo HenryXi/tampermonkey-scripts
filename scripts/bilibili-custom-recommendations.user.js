@@ -807,6 +807,20 @@
 
         playerWrap.appendChild(mask);
 
+        // 隐藏迷你播放器（滚动时右下角浮窗）
+        const miniStyle = document.createElement('style');
+        miniStyle.id = 'blocked-mini-player-style';
+        miniStyle.textContent = `
+            .bpx-player-mini-warp,
+            .mini-player,
+            .bpx-player-mini,
+            [class*="mini-player"],
+            [class*="miniPlayer"] {
+                display: none !important;
+            }
+        `;
+        document.head.appendChild(miniStyle);
+
         // 暂停视频
         const videoEl = document.querySelector('video');
         if (videoEl) {
@@ -823,6 +837,8 @@
     function removeBlockedOverlay() {
         const overlay = document.getElementById('blocked-video-overlay');
         if (overlay) overlay.remove();
+        const miniStyle = document.getElementById('blocked-mini-player-style');
+        if (miniStyle) miniStyle.remove();
     }
 
     // 检查当前视频是否属于被屏蔽的UP主
