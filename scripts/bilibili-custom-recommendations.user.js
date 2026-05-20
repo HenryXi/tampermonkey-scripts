@@ -774,34 +774,26 @@
         // 避免重复添加
         if (document.getElementById('blocked-video-overlay')) return;
 
-        const overlay = document.createElement('div');
-        overlay.id = 'blocked-video-overlay';
-        overlay.style.cssText = `
-            position: fixed;
-            top: 0; left: 0; right: 0; bottom: 0;
-            z-index: 999999;
-            pointer-events: none;
-        `;
-
-        // 找到播放器容器，在其上方覆盖
+        // 找到播放器容器，将遮罩插入其内部，随播放器滚动
         const playerWrap = document.querySelector('#bilibili-player, .bpx-player-container, #player_module');
         if (!playerWrap) return;
 
-        const rect = playerWrap.getBoundingClientRect();
+        // 确保播放器容器有相对定位，遮罩才能正确覆盖
+        const existingPosition = getComputedStyle(playerWrap).position;
+        if (existingPosition === 'static') {
+            playerWrap.style.position = 'relative';
+        }
 
         const mask = document.createElement('div');
+        mask.id = 'blocked-video-overlay';
         mask.style.cssText = `
             position: absolute;
-            top: ${rect.top + window.scrollY}px;
-            left: ${rect.left + window.scrollX}px;
-            width: ${rect.width}px;
-            height: ${rect.height}px;
+            inset: 0;
             background: #0a0a0a;
             display: flex;
             flex-direction: column;
             align-items: center;
             justify-content: center;
-            pointer-events: all;
             z-index: 999999;
         `;
 
@@ -813,8 +805,7 @@
             </div>
         `;
 
-        overlay.appendChild(mask);
-        document.body.appendChild(overlay);
+        playerWrap.appendChild(mask);
 
         // 暂停视频
         const videoEl = document.querySelector('video');
@@ -824,17 +815,6 @@
             // 持续阻止播放
             videoEl.addEventListener('play', function() { videoEl.pause(); }, true);
         }
-
-        // 窗口滚动或resize时更新遮罩位置
-        function updatePosition() {
-            const r = playerWrap.getBoundingClientRect();
-            mask.style.top = (r.top + window.scrollY) + 'px';
-            mask.style.left = (r.left + window.scrollX) + 'px';
-            mask.style.width = r.width + 'px';
-            mask.style.height = r.height + 'px';
-        }
-        window.addEventListener('scroll', updatePosition);
-        window.addEventListener('resize', updatePosition);
 
         console.log('🚫 已屏蔽该UP主的视频');
     }
