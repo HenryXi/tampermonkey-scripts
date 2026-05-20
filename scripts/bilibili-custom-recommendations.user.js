@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         B站自定义推荐视频
 // @namespace    http://tampermonkey.net/
-// @version      1.6.0
+// @version      1.7.0
 // @description  在B站视频播放页右侧推荐区域添加指定UP主的视频；屏蔽特定UP主的视频播放
 // @author       You
 // @match        https://www.bilibili.com/video/*
