@@ -61,6 +61,17 @@
             .video-page-card-small[data-report*="related_rec"] {
                 display: none !important;
             }
+            /* 全局禁用迷你播放器浮窗 */
+            .bpx-player-mini-warp,
+            .bpx-player-float-wrap,
+            [class*="mini-player"],
+            [class*="miniPlayer"],
+            [class*="mini_player"],
+            [class*="float-player"],
+            [class*="floatPlayer"],
+            [class*="small-player"] {
+                display: none !important;
+            }
         `;
         document.head.appendChild(style);
     } else {
@@ -90,11 +101,39 @@
                     .video-page-card-small[data-report*="related_rec"] {
                         display: none !important;
                     }
+                    /* 全局禁用迷你播放器浮窗 */
+                    .bpx-player-mini-warp,
+                    .bpx-player-float-wrap,
+                    [class*="mini-player"],
+                    [class*="miniPlayer"],
+                    [class*="mini_player"],
+                    [class*="float-player"],
+                    [class*="floatPlayer"],
+                    [class*="small-player"] {
+                        display: none !important;
+                    }
                 `;
                 document.head.appendChild(style);
             }
         }, 10);
     }
+
+    // 全局禁用迷你播放器：监听DOM新增节点，发现迷你播放器立即隐藏
+    new MutationObserver((mutations) => {
+        for (const mutation of mutations) {
+            for (const node of mutation.addedNodes) {
+                if (node.nodeType !== 1) continue;
+                const cls = (node.className || '').toString();
+                if (/mini|float.*player|small.*player/i.test(cls)) {
+                    node.style.setProperty('display', 'none', 'important');
+                }
+                // 检查子节点
+                node.querySelectorAll('[class*="mini"],[class*="float-player"],[class*="small-player"]').forEach(el => {
+                    el.style.setProperty('display', 'none', 'important');
+                });
+            }
+        }
+    }).observe(document.documentElement, { childList: true, subtree: true });
 
     // WBI签名相关
     const mixinKeyEncTab = [
