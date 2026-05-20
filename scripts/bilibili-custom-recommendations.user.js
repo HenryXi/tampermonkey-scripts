@@ -808,6 +808,7 @@
         playerWrap.appendChild(mask);
 
         // 隐藏迷你播放器（滚动时右下角浮窗）
+        // 用宽泛的CSS选择器覆盖各种可能的class
         const miniStyle = document.createElement('style');
         miniStyle.id = 'blocked-mini-player-style';
         miniStyle.textContent = `
@@ -815,11 +816,43 @@
             .mini-player,
             .bpx-player-mini,
             [class*="mini-player"],
-            [class*="miniPlayer"] {
+            [class*="miniPlayer"],
+            [class*="mini_player"],
+            .bpx-player-float-wrap,
+            [class*="float-player"],
+            [class*="floatPlayer"],
+            [class*="float_player"],
+            [class*="small-player"],
+            [class*="smallPlayer"] {
                 display: none !important;
             }
         `;
         document.head.appendChild(miniStyle);
+
+        // 用 MutationObserver 监听DOM，捕获动态插入的迷你播放器
+        const miniObserver = new MutationObserver((mutations) => {
+            for (const mutation of mutations) {
+                for (const node of mutation.addedNodes) {
+                    if (node.nodeType !== 1) continue;
+                    const style = getComputedStyle(node);
+                    // 右下角fixed定位的新元素，大概率是迷你播放器
+                    if (style.position === 'fixed' && node !== mask) {
+                        const rect = node.getBoundingClientRect();
+                        if (rect.bottom > window.innerHeight * 0.5 && rect.right > window.innerWidth * 0.5) {
+                            node.style.setProperty('display', 'none', 'important');
+                        }
+                    }
+                    // 也检查子元素
+                    node.querySelectorAll && node.querySelectorAll('[class*="mini"],[class*="float"],[class*="small-play"]').forEach(el => {
+                        el.style.setProperty('display', 'none', 'important');
+                    });
+                }
+            }
+        });
+        miniObserver.observe(document.body, { childList: true, subtree: true });
+
+        // 把observer存起来，清理时断开
+        window._blockedMiniObserver = miniObserver;
 
         // 暂停视频
         const videoEl = document.querySelector('video');
@@ -839,6 +872,10 @@
         if (overlay) overlay.remove();
         const miniStyle = document.getElementById('blocked-mini-player-style');
         if (miniStyle) miniStyle.remove();
+        if (window._blockedMiniObserver) {
+            window._blockedMiniObserver.disconnect();
+            window._blockedMiniObserver = null;
+        }
     }
 
     // 检查当前视频是否属于被屏蔽的UP主
