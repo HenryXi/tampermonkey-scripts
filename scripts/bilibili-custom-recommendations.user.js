@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         B站自定义推荐视频
 // @namespace    http://tampermonkey.net/
-// @version      1.7.0
+// @version      1.8.0
 // @description  在B站视频播放页右侧推荐区域添加指定UP主的视频；屏蔽特定UP主的视频播放
 // @author       You
 // @match        https://www.bilibili.com/video/*
@@ -796,16 +796,41 @@
         });
     }
 
-    // 在播放器上方覆盖一个"视频已下架"的遮罩
-    function showBlockedOverlay() {
-        // 避免重复添加
+    // 获取UP主粉丝数
+    function fetchUploaderFollower(mid) {
+        return new Promise((resolve) => {
+            GM_xmlhttpRequest({
+                method: 'GET',
+                url: `https://api.bilibili.com/x/relation/stat?vmid=${mid}`,
+                headers: {
+                    'Referer': 'https://www.bilibili.com',
+                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+                },
+                anonymous: false,
+                onload: function(response) {
+                    try {
+                        const data = JSON.parse(response.responseText);
+                        if (data.code === 0 && data.data) {
+                            resolve(data.data.follower);
+                        } else {
+                            resolve(null);
+                        }
+                    } catch (e) {
+                        resolve(null);
+                    }
+                },
+                onerror: function() { resolve(null); }
+            });
+        });
+    }
+
+    // 显示临时加载遮罩，阻止视频在检查完成前播放
+    function showCheckingOverlay() {
         if (document.getElementById('blocked-video-overlay')) return;
 
-        // 找到播放器容器，将遮罩插入其内部，随播放器滚动
         const playerWrap = document.querySelector('#bilibili-player, .bpx-player-container, #player_module');
         if (!playerWrap) return;
 
-        // 确保播放器容器有相对定位，遮罩才能正确覆盖
         const existingPosition = getComputedStyle(playerWrap).position;
         if (existingPosition === 'static') {
             playerWrap.style.position = 'relative';
@@ -823,6 +848,43 @@
             justify-content: center;
             z-index: 999999;
         `;
+        playerWrap.appendChild(mask);
+
+        const videoEl = document.querySelector('video');
+        if (videoEl) {
+            videoEl.pause();
+            videoEl.volume = 0;
+        }
+    }
+
+    // 在播放器上方覆盖一个"视频已下架"的遮罩
+    function showBlockedOverlay() {
+        // 复用已有遮罩（可能是 showCheckingOverlay 创建的）或新建
+        let mask = document.getElementById('blocked-video-overlay');
+
+        if (!mask) {
+            const playerWrap = document.querySelector('#bilibili-player, .bpx-player-container, #player_module');
+            if (!playerWrap) return;
+
+            const existingPosition = getComputedStyle(playerWrap).position;
+            if (existingPosition === 'static') {
+                playerWrap.style.position = 'relative';
+            }
+
+            mask = document.createElement('div');
+            mask.id = 'blocked-video-overlay';
+            mask.style.cssText = `
+                position: absolute;
+                inset: 0;
+                background: #0a0a0a;
+                display: flex;
+                flex-direction: column;
+                align-items: center;
+                justify-content: center;
+                z-index: 999999;
+            `;
+            playerWrap.appendChild(mask);
+        }
 
         mask.innerHTML = `
             <div style="text-align: center; color: #999; user-select: none;">
@@ -831,8 +893,6 @@
                 <div style="font-size: 14px; color: #666;">根据相关规定，该视频无法播放</div>
             </div>
         `;
-
-        playerWrap.appendChild(mask);
 
         // 迷你播放器由全局 CSS + MutationObserver 统一处理
 
@@ -856,30 +916,61 @@
 
     // 检查当前视频是否属于被屏蔽的UP主
     async function checkAndBlockVideo() {
-        if (BLOCKED_UP_MIDS.length === 0) return;
-
         removeBlockedOverlay();
 
         const bvid = getCurrentVideoBvid();
         if (!bvid) return;
 
-        const ownerMid = await fetchVideoOwnerMid(bvid);
-        if (!ownerMid) return;
-
-        if (BLOCKED_UP_MIDS.includes(ownerMid)) {
-            console.log(`🚫 检测到被屏蔽的UP主 (mid: ${ownerMid})，阻止播放`);
-            // 等待播放器渲染完成再覆盖
+        // 等待播放器出现后立即显示临时遮罩，阻止视频播放
+        await new Promise((resolve) => {
             let retries = 0;
-            const tryOverlay = setInterval(() => {
+            const wait = setInterval(() => {
                 retries++;
                 const playerWrap = document.querySelector('#bilibili-player, .bpx-player-container, #player_module');
                 if (playerWrap) {
-                    clearInterval(tryOverlay);
-                    showBlockedOverlay();
-                } else if (retries >= 20) {
-                    clearInterval(tryOverlay);
+                    clearInterval(wait);
+                    showCheckingOverlay();
+                    resolve();
+                } else if (retries >= 30) {
+                    clearInterval(wait);
+                    resolve();
                 }
-            }, 300);
+            }, 100);
+        });
+
+        const ownerMid = await fetchVideoOwnerMid(bvid);
+        if (!ownerMid) {
+            removeBlockedOverlay();
+            return;
+        }
+
+        // 判断是否在拉黑名单中
+        const isBlocked = BLOCKED_UP_MIDS.includes(ownerMid);
+
+        // 判断粉丝数是否不足10万
+        let isLowFollowers = false;
+        if (!isBlocked) {
+            const follower = await fetchUploaderFollower(ownerMid);
+            if (follower !== null && follower < 100000) {
+                console.log(`🚫 UP主 (mid: ${ownerMid}) 粉丝数 ${follower} 不足10万，阻止播放`);
+                isLowFollowers = true;
+            }
+        }
+
+        if (isBlocked || isLowFollowers) {
+            if (isBlocked) {
+                console.log(`🚫 检测到被屏蔽的UP主 (mid: ${ownerMid})，阻止播放`);
+            }
+            // 遮罩已经存在，直接填充下架内容
+            showBlockedOverlay();
+        } else {
+            // 检查通过，移除遮罩并恢复播放
+            removeBlockedOverlay();
+            const videoEl = document.querySelector('video');
+            if (videoEl) {
+                videoEl.volume = 1;
+                videoEl.play().catch(() => {});
+            }
         }
     }
 
