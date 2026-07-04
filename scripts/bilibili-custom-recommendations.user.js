@@ -64,6 +64,11 @@
             .video-page-card-small[data-report*="related_rec"] {
                 display: none !important;
             }
+            /* 隐藏右侧 rcmd-tab 推荐集合，避免页面加载后闪现 */
+            .rcmd-tab,
+            [class*="rcmd-tab"] {
+                display: none !important;
+            }
             /* 全局禁用迷你播放器浮窗 */
             .bpx-player-container[data-screen="mini"] {
                 display: none !important;
@@ -95,6 +100,11 @@
                     }
                     /* 隐藏推荐列表容器（但会被自定义内容覆盖） */
                     .video-page-card-small[data-report*="related_rec"] {
+                        display: none !important;
+                    }
+                    /* 隐藏右侧 rcmd-tab 推荐集合，避免页面加载后闪现 */
+                    .rcmd-tab,
+                    [class*="rcmd-tab"] {
                         display: none !important;
                     }
                     /* 全局禁用迷你播放器浮窗 */
