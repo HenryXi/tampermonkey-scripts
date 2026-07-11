@@ -866,6 +866,18 @@
             .replace(/'/g, '&#39;');
     }
 
+    function pauseCurrentVideo() {
+        const videoEl = document.querySelector('video');
+        if (videoEl) {
+            videoEl.pause();
+            videoEl.volume = 0;
+        }
+    }
+
+    function cloudPlayControlGuard(event) {
+        event.target.pause();
+    }
+
     function parseCloudControlText(text) {
         const content = String(text || '').trim();
         if (!content) {
@@ -937,6 +949,59 @@
         });
     }
 
+    // Gitee云端禁止播放时，隐藏整个页面并展示独立提示
+    function showCloudBlockedPage(message) {
+        let mask = document.getElementById('cloud-play-control-overlay');
+        if (!mask) {
+            mask = document.createElement('div');
+            mask.id = 'cloud-play-control-overlay';
+            mask.style.cssText = `
+                position: fixed;
+                inset: 0;
+                width: 100vw;
+                height: 100vh;
+                background: linear-gradient(135deg, #111827 0%, #030712 100%);
+                color: #e5e7eb;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                z-index: 2147483647;
+                font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+            `;
+            document.documentElement.appendChild(mask);
+        }
+
+        mask.innerHTML = `
+            <div style="box-sizing: border-box; width: min(520px, calc(100vw - 48px)); padding: 42px 36px; border-radius: 24px; background: rgba(17, 24, 39, 0.92); border: 1px solid rgba(148, 163, 184, 0.25); box-shadow: 0 24px 80px rgba(0, 0, 0, 0.45); text-align: center;">
+                <div style="font-size: 64px; line-height: 1; margin-bottom: 22px;">⏸️</div>
+                <div style="font-size: 26px; font-weight: 700; margin-bottom: 12px; color: #f9fafb;">暂时无法访问 B站播放页</div>
+                <div style="font-size: 15px; line-height: 1.8; color: #cbd5e1; margin-bottom: 24px;">${escapeHtml(message || '云端规则已限制播放，请稍后再试。')}</div>
+                <div style="font-size: 12px; color: #64748b;">该提示由 Gitee 云端配置控制</div>
+            </div>
+        `;
+
+        document.documentElement.style.overflow = 'hidden';
+        if (document.body) document.body.style.overflow = 'hidden';
+        pauseCurrentVideo();
+        const videoEl = document.querySelector('video');
+        if (videoEl && !videoEl.dataset.cloudPlayControlBlocked) {
+            videoEl.dataset.cloudPlayControlBlocked = 'true';
+            videoEl.addEventListener('play', cloudPlayControlGuard, true);
+        }
+    }
+
+    function removeCloudBlockedPage() {
+        const overlay = document.getElementById('cloud-play-control-overlay');
+        if (overlay) overlay.remove();
+        document.documentElement.style.overflow = '';
+        if (document.body) document.body.style.overflow = '';
+        const videoEl = document.querySelector('video');
+        if (videoEl && videoEl.dataset.cloudPlayControlBlocked) {
+            videoEl.removeEventListener('play', cloudPlayControlGuard, true);
+            delete videoEl.dataset.cloudPlayControlBlocked;
+        }
+    }
+
     // 显示临时加载遮罩，阻止视频在检查完成前播放
     function showCheckingOverlay() {
         if (document.getElementById('blocked-video-overlay')) return;
@@ -963,11 +1028,7 @@
         `;
         playerWrap.appendChild(mask);
 
-        const videoEl = document.querySelector('video');
-        if (videoEl) {
-            videoEl.pause();
-            videoEl.volume = 0;
-        }
+        pauseCurrentVideo();
     }
 
     // 在播放器上方覆盖一个"视频已下架"的遮罩
@@ -1012,8 +1073,7 @@
         // 暂停视频
         const videoEl = document.querySelector('video');
         if (videoEl) {
-            videoEl.pause();
-            videoEl.volume = 0;
+            pauseCurrentVideo();
             // 持续阻止播放
             videoEl.addEventListener('play', function() { videoEl.pause(); }, true);
         }
@@ -1055,9 +1115,10 @@
         if (getCurrentVideoBvid() !== bvid) return;
         if (!cloudControl.allow) {
             console.log('🚫 云端播放控制已禁止播放当前视频');
-            showBlockedOverlay(cloudControl.message || '云端规则已限制播放');
+            showCloudBlockedPage(cloudControl.message || '云端规则已限制播放，请稍后再试。');
             return;
         }
+        removeCloudBlockedPage();
 
         const ownerMid = await fetchVideoOwnerMid(bvid);
         if (getCurrentVideoBvid() !== bvid) return;
