@@ -876,14 +876,17 @@
         },
 
         watchRoute() {
-            let lastUrl = location.href;
+            let lastBvid = Util.getBvid();
+            let routeTimer = null;
             new MutationObserver(() => {
-                if (location.href !== lastUrl && location.pathname.includes('/video/')) {
-                    lastUrl = location.href;
+                const currentBvid = Util.getBvid();
+                if (currentBvid && currentBvid !== lastBvid) {
+                    lastBvid = currentBvid;
                     State.cloudPromise = null;
                     State.endListenerVideo = null;
                     document.querySelectorAll('.custom-play-page-right-section, #custom-play-page-player-block').forEach(el => el.remove());
-                    setTimeout(() => this.run(), 800);
+                    clearTimeout(routeTimer);
+                    routeTimer = setTimeout(() => this.run(), 800);
                 }
             }).observe(document.body, { childList: true, subtree: true });
         },
