@@ -1,12 +1,13 @@
 // ==UserScript==
 // @name         B站自定义推荐视频
 // @namespace    http://tampermonkey.net/
-// @version      1.8.0
-// @description  在B站视频播放页右侧推荐区域添加指定UP主的视频；屏蔽特定UP主的视频播放
+// @version      1.9.0
+// @description  在B站视频播放页右侧推荐区域添加指定UP主的视频；支持本地和Gitee云端控制视频播放
 // @author       You
 // @match        https://www.bilibili.com/video/*
 // @grant        GM_xmlhttpRequest
 // @connect      api.bilibili.com
+// @connect      gitee.com
 // @run-at       document-start
 // @updateURL    https://rawgithubusercontent.com/HenryXi/bilibili_play_page_change/raw/refs/heads/main/bilibili-custom-recommendations.user.js
 // @downloadURL  https://rawgithubusercontent.com/HenryXi/bilibili_play_page_change/raw/refs/heads/main/bilibili-custom-recommendations.user.js
@@ -35,6 +36,15 @@
         '3546954380348053',
         '6057259'
     ];
+
+    // Gitee 云端播放开关文本地址。请填写 Gitee 文件的「原始数据」地址，例如：
+    // https://gitee.com/你的用户名/你的仓库/raw/master/bilibili-play-control.txt
+    // 支持内容：allow/true/1/on/enable 表示允许播放；block/deny/false/0/off/disable 表示禁止播放。
+    // 也支持 JSON：{"allow":true}、{"allowPlay":false,"message":"休息一下"}、{"enabled":true}
+    const CLOUD_CONTROL_URL = '';
+    // 云端校验失败时是否禁止播放：false 表示网络异常时不影响播放，true 表示校验失败也禁播
+    const CLOUD_CONTROL_FAIL_CLOSED = false;
+    const CLOUD_CONTROL_TIMEOUT = 5000;
     // ==============================
 
     // 存储获取到的视频
@@ -834,6 +844,98 @@
         });
     }
 
+    // 解析Gitee云端控制文本
+    function normalizeCloudBoolean(value) {
+        if (typeof value === 'boolean') return value;
+        if (typeof value === 'number') return value !== 0;
+        if (typeof value === 'string') {
+            const normalized = value.trim().toLowerCase();
+            if (['allow', 'allowed', 'true', '1', 'on', 'enable', 'enabled', 'yes', 'play'].includes(normalized)) return true;
+            if (['block', 'blocked', 'deny', 'denied', 'false', '0', 'off', 'disable', 'disabled', 'no', 'stop'].includes(normalized)) return false;
+        }
+        return Boolean(value);
+    }
+
+    function escapeHtml(text) {
+        return String(text || '')
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;')
+            .replace(/'/g, '&#39;');
+    }
+
+    function parseCloudControlText(text) {
+        const content = String(text || '').trim();
+        if (!content) {
+            return { allow: true };
+        }
+
+        try {
+            const json = JSON.parse(content);
+            const allowValue = json.allow ?? json.allowPlay ?? json.enabled ?? json.play;
+            if (allowValue !== undefined) {
+                return {
+                    allow: normalizeCloudBoolean(allowValue),
+                    message: json.message || json.reason || ''
+                };
+            }
+        } catch (e) {
+            // 非JSON文本按简单开关解析
+        }
+
+        const firstLine = content.split(/\r?\n/).map(line => line.trim()).find(line => line && !line.startsWith('#')) || '';
+        const normalized = firstLine.toLowerCase();
+        const allowValues = ['allow', 'allowed', 'true', '1', 'on', 'enable', 'enabled', 'yes', 'play'];
+        const blockValues = ['block', 'blocked', 'deny', 'denied', 'false', '0', 'off', 'disable', 'disabled', 'no', 'stop'];
+
+        if (allowValues.includes(normalized)) {
+            return { allow: true };
+        }
+        if (blockValues.includes(normalized)) {
+            return { allow: false };
+        }
+
+        console.warn('⚠️ 云端播放控制内容无法识别，默认允许播放:', firstLine);
+        return { allow: true };
+    }
+
+    // 从Gitee读取云端播放开关
+    function fetchCloudPlayControl() {
+        return new Promise((resolve) => {
+            if (!CLOUD_CONTROL_URL) {
+                resolve({ allow: true, skipped: true });
+                return;
+            }
+
+            GM_xmlhttpRequest({
+                method: 'GET',
+                url: `${CLOUD_CONTROL_URL}${CLOUD_CONTROL_URL.includes('?') ? '&' : '?'}_=${Date.now()}`,
+                timeout: CLOUD_CONTROL_TIMEOUT,
+                headers: {
+                    'Cache-Control': 'no-cache',
+                    'Pragma': 'no-cache'
+                },
+                onload: function(response) {
+                    if (response.status >= 200 && response.status < 300) {
+                        resolve(parseCloudControlText(response.responseText));
+                    } else {
+                        console.warn(`⚠️ 云端播放控制请求失败，HTTP ${response.status}`);
+                        resolve({ allow: !CLOUD_CONTROL_FAIL_CLOSED, error: true });
+                    }
+                },
+                ontimeout: function() {
+                    console.warn('⚠️ 云端播放控制请求超时');
+                    resolve({ allow: !CLOUD_CONTROL_FAIL_CLOSED, error: true });
+                },
+                onerror: function() {
+                    console.warn('⚠️ 云端播放控制请求异常');
+                    resolve({ allow: !CLOUD_CONTROL_FAIL_CLOSED, error: true });
+                }
+            });
+        });
+    }
+
     // 显示临时加载遮罩，阻止视频在检查完成前播放
     function showCheckingOverlay() {
         if (document.getElementById('blocked-video-overlay')) return;
@@ -868,7 +970,7 @@
     }
 
     // 在播放器上方覆盖一个"视频已下架"的遮罩
-    function showBlockedOverlay() {
+    function showBlockedOverlay(message) {
         // 复用已有遮罩（可能是 showCheckingOverlay 创建的）或新建
         let mask = document.getElementById('blocked-video-overlay');
 
@@ -900,7 +1002,7 @@
             <div style="text-align: center; color: #999; user-select: none;">
                 <div style="font-size: 64px; margin-bottom: 16px; opacity: 0.4;">📭</div>
                 <div style="font-size: 20px; font-weight: bold; color: #ccc; margin-bottom: 8px;">视频已下架</div>
-                <div style="font-size: 14px; color: #666;">根据相关规定，该视频无法播放</div>
+                <div style="font-size: 14px; color: #666;">${escapeHtml(message || '根据相关规定，该视频无法播放')}</div>
             </div>
         `;
 
@@ -915,7 +1017,7 @@
             videoEl.addEventListener('play', function() { videoEl.pause(); }, true);
         }
 
-        console.log('🚫 已屏蔽该UP主的视频');
+        console.log('🚫 已阻止当前视频播放');
     }
 
     // 移除屏蔽遮罩（切换到其他视频时清理）
@@ -948,7 +1050,16 @@
             }, 100);
         });
 
+        const cloudControl = await fetchCloudPlayControl();
+        if (getCurrentVideoBvid() !== bvid) return;
+        if (!cloudControl.allow) {
+            console.log('🚫 云端播放控制已禁止播放当前视频');
+            showBlockedOverlay(cloudControl.message || '云端规则已限制播放');
+            return;
+        }
+
         const ownerMid = await fetchVideoOwnerMid(bvid);
+        if (getCurrentVideoBvid() !== bvid) return;
         if (!ownerMid) {
             removeBlockedOverlay();
             return;
