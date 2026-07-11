@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         B站自定义播放页
 // @namespace    http://tampermonkey.net/
-// @version      1.0.4
+// @version      1.0.5
 // @description  B站播放页定制：云端时间窗口、右侧推荐、结束页推荐、UP屏蔽与播放保护
 // @author       You
 // @match        https://www.bilibili.com/video/*
@@ -42,7 +42,11 @@
         endListenerVideo: null,
         miniObserver: null,
         routeObserver: null,
-        routeTimer: null
+        routeTimer: null,
+        playbackLocked: true,
+        playbackLockInstalled: false,
+        playbackLockObserver: null,
+        playbackWasRequested: false
     };
 
     function injectBaseStyles() {
@@ -623,6 +627,48 @@
     };
 
     const PlaybackGuard = {
+        lockUntilChecked() {
+            State.playbackLocked = true;
+            this.pauseLockedVideos();
+            if (State.playbackLockInstalled) return;
+
+            State.playbackLockInstalled = true;
+            document.addEventListener('play', event => {
+                if (!State.playbackLocked || event.target?.tagName !== 'VIDEO') return;
+                State.playbackWasRequested = true;
+                this.pauseLockedVideo(event.target);
+            }, true);
+
+            State.playbackLockObserver = new MutationObserver(() => this.pauseLockedVideos());
+            State.playbackLockObserver.observe(document.documentElement, { childList: true, subtree: true });
+            this.pauseLockedVideos();
+        },
+
+        pauseLockedVideos() {
+            if (!State.playbackLocked) return;
+            document.querySelectorAll('video').forEach(video => this.pauseLockedVideo(video));
+        },
+
+        pauseLockedVideo(video) {
+            if (!video) return;
+            if (!video.paused) State.playbackWasRequested = true;
+            if (!video.dataset.customPlayPagePreviousMuted) {
+                video.dataset.customPlayPagePreviousMuted = video.muted ? 'true' : 'false';
+            }
+            video.muted = true;
+            video.pause();
+        },
+
+        unlockPlayback() {
+            State.playbackLocked = false;
+            document.querySelectorAll('video[data-custom-play-page-previous-muted]').forEach(video => {
+                video.muted = video.dataset.customPlayPagePreviousMuted === 'true';
+                delete video.dataset.customPlayPagePreviousMuted;
+                if (State.playbackWasRequested) video.play().catch(() => {});
+            });
+            State.playbackWasRequested = false;
+        },
+
         showCloudBlock(message) {
             let mask = document.getElementById('custom-play-page-cloud-block');
             if (!mask) {
@@ -725,7 +771,11 @@
             this.removeCloudBlock();
 
             const ownerMid = await BiliApi.fetchCurrentVideoOwnerMid(bvid);
-            if (!ownerMid || Util.getBvid() !== bvid) return;
+            if (Util.getBvid() !== bvid) return;
+            if (!ownerMid) {
+                this.unlockPlayback();
+                return;
+            }
 
             const blockedMids = cloudConfig.blockedUpMids || Config.defaultBlockedUpMids;
             let shouldShowRemoved = blockedMids.includes(ownerMid);
@@ -741,6 +791,7 @@
             }
 
             this.removePlayerBlock();
+            this.unlockPlayback();
             this.restoreVideoVolume();
         }
     };
@@ -931,6 +982,7 @@
                 const currentBvid = Util.getBvid();
                 if (currentBvid && currentBvid !== lastBvid) {
                     lastBvid = currentBvid;
+                    PlaybackGuard.lockUntilChecked();
                     State.cloudPromise = null;
                     State.endListenerVideo = null;
                     MiniPlayerGuard.stop();
@@ -945,6 +997,7 @@
         },
 
         start() {
+            PlaybackGuard.lockUntilChecked();
             injectBaseStyles();
 
             const startMain = () => {
