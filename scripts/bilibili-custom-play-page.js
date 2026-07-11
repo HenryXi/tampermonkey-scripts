@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         B站自定义播放页
 // @namespace    http://tampermonkey.net/
-// @version      1.0.2
+// @version      1.0.4
 // @description  B站播放页定制：云端时间窗口、右侧推荐、结束页推荐、UP屏蔽与播放保护
 // @author       You
 // @match        https://www.bilibili.com/video/*
@@ -40,7 +40,9 @@
         currentUrl: location.href,
         routeRunId: 0,
         endListenerVideo: null,
-        miniObserver: null
+        miniObserver: null,
+        routeObserver: null,
+        routeTimer: null
     };
 
     function injectBaseStyles() {
@@ -561,7 +563,8 @@
                     headers: this.commonHeaders,
                     anonymous: false
                 });
-                return data.code === 0 && data.data ? Number(data.data.follower) : null;
+                const follower = Number(data.code === 0 && data.data ? data.data.follower : NaN);
+                return Number.isFinite(follower) ? follower : null;
             } catch (error) {
                 Log.warn('获取 UP 主粉丝数失败', error);
                 return null;
@@ -640,6 +643,12 @@
                     <div style="font-size:15px;line-height:1.8;color:#cbd5e1;">${Util.escapeHtml(message || '暂时无法访问')}</div>
                 </div>
             `;
+            if (!document.documentElement.dataset.customPlayPagePreviousOverflow) {
+                document.documentElement.dataset.customPlayPagePreviousOverflow = document.documentElement.style.overflow || ' ';
+            }
+            if (document.body && !document.body.dataset.customPlayPagePreviousOverflow) {
+                document.body.dataset.customPlayPagePreviousOverflow = document.body.style.overflow || ' ';
+            }
             document.documentElement.style.overflow = 'hidden';
             if (document.body) document.body.style.overflow = 'hidden';
             this.pauseVideo();
@@ -647,8 +656,14 @@
 
         removeCloudBlock() {
             document.getElementById('custom-play-page-cloud-block')?.remove();
-            document.documentElement.style.overflow = '';
-            if (document.body) document.body.style.overflow = '';
+            if (document.documentElement.dataset.customPlayPagePreviousOverflow) {
+                document.documentElement.style.overflow = document.documentElement.dataset.customPlayPagePreviousOverflow === ' ' ? '' : document.documentElement.dataset.customPlayPagePreviousOverflow;
+                delete document.documentElement.dataset.customPlayPagePreviousOverflow;
+            }
+            if (document.body?.dataset.customPlayPagePreviousOverflow) {
+                document.body.style.overflow = document.body.dataset.customPlayPagePreviousOverflow === ' ' ? '' : document.body.dataset.customPlayPagePreviousOverflow;
+                delete document.body.dataset.customPlayPagePreviousOverflow;
+            }
         },
 
         pauseVideo() {
@@ -665,7 +680,10 @@
             let overlay = document.getElementById('custom-play-page-player-block');
             if (!overlay) {
                 const currentPosition = getComputedStyle(playerRoot).position;
-                if (currentPosition === 'static') playerRoot.style.position = 'relative';
+                if (currentPosition === 'static') {
+                    playerRoot.style.position = 'relative';
+                    playerRoot.dataset.customPlayPagePositionFixed = 'true';
+                }
                 overlay = document.createElement('div');
                 overlay.id = 'custom-play-page-player-block';
                 overlay.style.cssText = 'position:absolute;inset:0;background:#0a0a0a;display:flex;align-items:center;justify-content:center;z-index:999999;';
@@ -683,6 +701,11 @@
 
         removePlayerBlock() {
             document.getElementById('custom-play-page-player-block')?.remove();
+            const playerRoot = Dom.playerRoot();
+            if (playerRoot?.dataset.customPlayPagePositionFixed === 'true') {
+                playerRoot.style.position = '';
+                delete playerRoot.dataset.customPlayPagePositionFixed;
+            }
         },
 
         restoreVideoVolume() {
@@ -704,13 +727,15 @@
             const ownerMid = await BiliApi.fetchCurrentVideoOwnerMid(bvid);
             if (!ownerMid || Util.getBvid() !== bvid) return;
 
-            if ((cloudConfig.blockedUpMids || Config.defaultBlockedUpMids).includes(ownerMid)) {
-                this.showPlayerBlock();
-                return;
+            const blockedMids = cloudConfig.blockedUpMids || Config.defaultBlockedUpMids;
+            let shouldShowRemoved = blockedMids.includes(ownerMid);
+            if (!shouldShowRemoved) {
+                const follower = await BiliApi.fetchUploaderFollower(ownerMid);
+                if (Util.getBvid() !== bvid) return;
+                shouldShowRemoved = follower !== null && follower < Config.minFollowerCount;
             }
 
-            const follower = await BiliApi.fetchUploaderFollower(ownerMid);
-            if (follower !== null && follower < Config.minFollowerCount) {
+            if (shouldShowRemoved) {
                 this.showPlayerBlock();
                 return;
             }
@@ -721,6 +746,18 @@
     };
 
     const RightRecommendations = {
+        cleanup() {
+            document.querySelectorAll('.custom-play-page-right-section').forEach(element => element.remove());
+            document.querySelectorAll('[data-custom-play-page-hidden="true"]').forEach(element => {
+                element.style.display = element.dataset.customPlayPagePreviousDisplay || '';
+                delete element.dataset.customPlayPageHidden;
+                delete element.dataset.customPlayPagePreviousDisplay;
+            });
+            document.querySelectorAll('.custom-play-page-right-root').forEach(element => {
+                element.classList.remove('custom-play-page-right-root');
+            });
+        },
+
         inject(videos) {
             const container = Dom.safeRightContainer();
             if (!container) {
@@ -729,10 +766,14 @@
             }
             if (Dom.isHeaderElement(container)) return false;
 
+            this.cleanup();
             container.classList.add('custom-play-page-right-root');
-            container.querySelector('.custom-play-page-right-section')?.remove();
             container.querySelectorAll('.video-page-card-small:not(.custom-play-page-card), .rec-list, .next-play, [data-report*="related_rec"], .rcmd-tab, [class*="rcmd-tab"]').forEach(element => {
-                if (!Dom.isHeaderElement(element)) element.style.display = 'none';
+                if (!Dom.isHeaderElement(element)) {
+                    element.dataset.customPlayPageHidden = 'true';
+                    element.dataset.customPlayPagePreviousDisplay = element.style.display || '';
+                    element.style.display = 'none';
+                }
             });
 
             const section = document.createElement('div');
@@ -830,6 +871,11 @@
             State.miniObserver = new MutationObserver(normalize);
             State.miniObserver.observe(root, { subtree: true, attributes: true, attributeFilter: ['data-screen'] });
             normalize();
+        },
+
+        stop() {
+            State.miniObserver?.disconnect();
+            State.miniObserver = null;
         }
     };
 
@@ -865,7 +911,10 @@
             }
             PlaybackGuard.removeCloudBlock();
             await Dom.waitFor(() => Dom.playerRoot(), { timeout: 10000, interval: 200 });
-            PlaybackGuard.run(cloudConfig);
+            if (runId !== State.routeRunId) return;
+
+            await PlaybackGuard.run(cloudConfig);
+            if (runId !== State.routeRunId) return;
             MiniPlayerGuard.start();
 
             const videos = await this.loadRecommendations(cloudConfig);
@@ -876,26 +925,27 @@
         },
 
         watchRoute() {
+            if (State.routeObserver) return;
             let lastBvid = Util.getBvid();
-            let routeTimer = null;
-            new MutationObserver(() => {
+            State.routeObserver = new MutationObserver(() => {
                 const currentBvid = Util.getBvid();
                 if (currentBvid && currentBvid !== lastBvid) {
                     lastBvid = currentBvid;
                     State.cloudPromise = null;
                     State.endListenerVideo = null;
-                    document.querySelectorAll('.custom-play-page-right-section, #custom-play-page-player-block').forEach(el => el.remove());
-                    clearTimeout(routeTimer);
-                    routeTimer = setTimeout(() => this.run(), 800);
+                    MiniPlayerGuard.stop();
+                    PlaybackGuard.removeCloudBlock();
+                    PlaybackGuard.removePlayerBlock();
+                    RightRecommendations.cleanup();
+                    clearTimeout(State.routeTimer);
+                    State.routeTimer = setTimeout(() => this.run(), 800);
                 }
-            }).observe(document.body, { childList: true, subtree: true });
+            });
+            State.routeObserver.observe(document.body, { childList: true, subtree: true });
         },
 
         start() {
             injectBaseStyles();
-            const cachedConfig = CloudConfig.readCache();
-            const cachedState = TimeWindow.state(cachedConfig);
-            if (cachedConfig && !cachedState.allow) PlaybackGuard.showCloudBlock(cachedState.message);
 
             const startMain = () => {
                 this.watchRoute();
