@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         B站自定义播放页
 // @namespace    http://tampermonkey.net/
-// @version      1.0.1
+// @version      1.0.2
 // @description  B站播放页定制：云端时间窗口、右侧推荐、结束页推荐、UP屏蔽与播放保护
 // @author       You
 // @match        https://www.bilibili.com/video/*
@@ -50,6 +50,18 @@
         style.textContent = `
             #bilibili-player .bpx-player-container[data-screen="mini"],
             #player_module .bpx-player-container[data-screen="mini"] {
+                display: none !important;
+            }
+            #reco_list .rcmd-tab,
+            #reco_list [class*="rcmd-tab"],
+            #danmukuBox .rcmd-tab,
+            #danmukuBox [class*="rcmd-tab"],
+            #mirror-vdcon + .right-container .rcmd-tab,
+            #mirror-vdcon + .right-container [class*="rcmd-tab"],
+            .video-container-v1 .right-container .rcmd-tab,
+            .video-container-v1 .right-container [class*="rcmd-tab"],
+            .video-container .right-container .rcmd-tab,
+            .video-container .right-container [class*="rcmd-tab"] {
                 display: none !important;
             }
             .custom-play-page-right-root .video-page-card-small:not(.custom-play-page-card),
