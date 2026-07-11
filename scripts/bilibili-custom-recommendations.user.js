@@ -50,6 +50,7 @@
 
     // 存储获取到的视频
     let allVideos = [];
+    let cloudControlPromise = null;
 
     // 添加CSS样式，提前隐藏原始推荐视频（立即执行，在DOM加载前）
     if (document.head) {
@@ -949,6 +950,13 @@
         });
     }
 
+    function getCloudPlayControl() {
+        if (!cloudControlPromise) {
+            cloudControlPromise = fetchCloudPlayControl();
+        }
+        return cloudControlPromise;
+    }
+
     // Gitee云端禁止播放时，隐藏整个页面并展示独立提示
     function showCloudBlockedPage(message) {
         let mask = document.getElementById('cloud-play-control-overlay');
@@ -999,6 +1007,20 @@
             videoEl.removeEventListener('play', cloudPlayControlGuard, true);
             delete videoEl.dataset.cloudPlayControlBlocked;
         }
+    }
+
+    function startCloudControlPrecheck() {
+        if (!CLOUD_CONTROL_URL) return;
+
+        showCloudBlockedPage('正在检查访问权限...');
+        getCloudPlayControl().then((cloudControl) => {
+            if (!cloudControl.allow) {
+                console.log('🚫 云端播放控制已禁止访问播放页');
+                showCloudBlockedPage(cloudControl.message || '云端规则已限制播放，请稍后再试。');
+            } else {
+                removeCloudBlockedPage();
+            }
+        });
     }
 
     // 显示临时加载遮罩，阻止视频在检查完成前播放
@@ -1110,7 +1132,7 @@
             }, 100);
         });
 
-        const cloudControl = await fetchCloudPlayControl();
+        const cloudControl = await getCloudPlayControl();
         if (getCurrentVideoBvid() !== bvid) return;
         if (!cloudControl.allow) {
             console.log('🚫 云端播放控制已禁止播放当前视频');
@@ -1264,6 +1286,8 @@
     }
 
     // 根据DOM状态决定何时启动
+    startCloudControlPrecheck();
+
     if (document.readyState === 'loading') {
         // DOM还在加载中，等待DOMContentLoaded事件
         document.addEventListener('DOMContentLoaded', startScript);
