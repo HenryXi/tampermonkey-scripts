@@ -8,6 +8,7 @@
 // @grant        GM_xmlhttpRequest
 // @connect      api.bilibili.com
 // @connect      gitee.com
+// @connect      raw.giteeusercontent.com
 // @run-at       document-start
 // @updateURL    https://rawgithubusercontent.com/HenryXi/bilibili_play_page_change/raw/refs/heads/main/bilibili-custom-recommendations.user.js
 // @downloadURL  https://rawgithubusercontent.com/HenryXi/bilibili_play_page_change/raw/refs/heads/main/bilibili-custom-recommendations.user.js
@@ -41,7 +42,7 @@
     // https://gitee.com/你的用户名/你的仓库/raw/master/bilibili-play-control.txt
     // 支持内容：allow/true/1/on/enable 表示允许播放；block/deny/false/0/off/disable 表示禁止播放。
     // 也支持 JSON：{"allow":true}、{"allowPlay":false,"message":"休息一下"}、{"enabled":true}
-    const CLOUD_CONTROL_URL = '';
+    const CLOUD_CONTROL_URL = 'https://raw.giteeusercontent.com/beijiguangyong/config/raw/master/bilibili.json';
     // 云端校验失败时是否禁止播放：false 表示网络异常时不影响播放，true 表示校验失败也禁播
     const CLOUD_CONTROL_FAIL_CLOSED = false;
     const CLOUD_CONTROL_TIMEOUT = 5000;
