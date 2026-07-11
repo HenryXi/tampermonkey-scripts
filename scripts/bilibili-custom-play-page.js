@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         B站自定义播放页
 // @namespace    http://tampermonkey.net/
-// @version      1.0.4
+// @version      1.0.5
 // @description  B站播放页定制：云端时间窗口、右侧推荐、结束页推荐、UP屏蔽与播放保护
 // @author       You
 // @match        https://www.bilibili.com/video/*
@@ -725,14 +725,18 @@
             this.removeCloudBlock();
 
             const ownerMid = await BiliApi.fetchCurrentVideoOwnerMid(bvid);
-            if (!ownerMid || Util.getBvid() !== bvid) return;
+            if (Util.getBvid() !== bvid) return;
+            if (!ownerMid) {
+                this.showPlayerBlock();
+                return;
+            }
 
             const blockedMids = cloudConfig.blockedUpMids || Config.defaultBlockedUpMids;
             let shouldShowRemoved = blockedMids.includes(ownerMid);
             if (!shouldShowRemoved) {
                 const follower = await BiliApi.fetchUploaderFollower(ownerMid);
                 if (Util.getBvid() !== bvid) return;
-                shouldShowRemoved = follower !== null && follower < Config.minFollowerCount;
+                shouldShowRemoved = follower === null || follower < Config.minFollowerCount;
             }
 
             if (shouldShowRemoved) {
