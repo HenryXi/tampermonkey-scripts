@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         B站自定义推荐视频
 // @namespace    http://tampermonkey.net/
-// @version      1.12.2
+// @version      1.12.3
 // @description  在B站视频播放页右侧推荐区域添加指定UP主的视频；支持本地和Gitee云端控制视频播放
 // @author       You
 // @match        https://www.bilibili.com/video/*
@@ -65,19 +65,27 @@
                 display: none !important;
             }
             /* 隐藏右侧原始推荐视频卡片 */
-            .video-page-card-small:not(.custom-recommend-card) {
+            #reco_list .video-page-card-small:not(.custom-recommend-card),
+            .right-container .video-page-card-small:not(.custom-recommend-card),
+            .right-container-inner .video-page-card-small:not(.custom-recommend-card) {
                 display: none !important;
             }
             /* 隐藏接下来播放 */
-            .next-play {
+            #reco_list .next-play,
+            .right-container .next-play,
+            .right-container-inner .next-play {
                 display: none !important;
             }
             /* 隐藏其他可能的原始推荐容器 */
-            .rec-list:not(.custom-recommend-section) {
+            #reco_list.rec-list:not(.custom-recommend-section),
+            .right-container .rec-list:not(.custom-recommend-section),
+            .right-container-inner .rec-list:not(.custom-recommend-section) {
                 display: none !important;
             }
             /* 隐藏推荐列表容器（但会被自定义内容覆盖） */
-            .video-page-card-small[data-report*="related_rec"] {
+            #reco_list .video-page-card-small[data-report*="related_rec"],
+            .right-container .video-page-card-small[data-report*="related_rec"],
+            .right-container-inner .video-page-card-small[data-report*="related_rec"] {
                 display: none !important;
             }
             /* 隐藏右侧 rcmd-tab 推荐集合，避免页面加载后闪现，避免误伤顶部 right-entry */
@@ -107,19 +115,27 @@
                         display: none !important;
                     }
                     /* 隐藏右侧原始推荐视频卡片 */
-                    .video-page-card-small:not(.custom-recommend-card) {
+                    #reco_list .video-page-card-small:not(.custom-recommend-card),
+                    .right-container .video-page-card-small:not(.custom-recommend-card),
+                    .right-container-inner .video-page-card-small:not(.custom-recommend-card) {
                         display: none !important;
                     }
                     /* 隐藏接下来播放 */
-                    .next-play {
+                    #reco_list .next-play,
+                    .right-container .next-play,
+                    .right-container-inner .next-play {
                         display: none !important;
                     }
                     /* 隐藏其他可能的原始推荐容器 */
-                    .rec-list:not(.custom-recommend-section) {
+                    #reco_list.rec-list:not(.custom-recommend-section),
+                    .right-container .rec-list:not(.custom-recommend-section),
+                    .right-container-inner .rec-list:not(.custom-recommend-section) {
                         display: none !important;
                     }
                     /* 隐藏推荐列表容器（但会被自定义内容覆盖） */
-                    .video-page-card-small[data-report*="related_rec"] {
+                    #reco_list .video-page-card-small[data-report*="related_rec"],
+                    .right-container .video-page-card-small[data-report*="related_rec"],
+                    .right-container-inner .video-page-card-small[data-report*="related_rec"] {
                         display: none !important;
                     }
                     /* 隐藏右侧 rcmd-tab 推荐集合，避免页面加载后闪现，避免误伤顶部 right-entry */
@@ -572,7 +588,7 @@
     // 限制原始推荐视频数量
     function limitOriginalRecommendations() {
         // 查找右侧推荐区域的所有原始视频卡片
-        const videoCards = document.querySelectorAll('.video-page-card-small:not(.custom-recommend-card)');
+        const videoCards = document.querySelectorAll('#reco_list .video-page-card-small:not(.custom-recommend-card), .right-container .video-page-card-small:not(.custom-recommend-card), .right-container-inner .video-page-card-small:not(.custom-recommend-card)');
 
         if (videoCards.length > ORIGINAL_RECOMMEND_COUNT) {
             // 隐藏超过限制数量的视频卡片
@@ -588,10 +604,15 @@
     // 注入自定义推荐视频
     function injectCustomRecommendations() {
         // 查找右侧推荐区域
-        const rightContainer = document.querySelector('#reco_list, .video-page-card-small, .rec-list');
+        const rightContainer = document.querySelector('#reco_list, .right-container .video-page-card-small, .right-container-inner .video-page-card-small, .right-container .rec-list, .right-container-inner .rec-list');
 
         if (!rightContainer) {
             console.log('未找到推荐区域，稍后重试...');
+            return false;
+        }
+
+        if (rightContainer.closest('.bili-header')) {
+            console.log('匹配到顶部区域，跳过本次推荐注入');
             return false;
         }
 
@@ -599,6 +620,11 @@
         let container = rightContainer.closest('.right-container, .right-container-inner');
         if (!container) {
             container = rightContainer.parentElement;
+        }
+
+        if (!container || container.closest('.bili-header')) {
+            console.log('推荐容器异常，跳过本次推荐注入');
+            return false;
         }
 
         // 检查是否已经添加过
