@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         B站自定义推荐视频
 // @namespace    http://tampermonkey.net/
-// @version      1.9.1
+// @version      1.10.0
 // @description  在B站视频播放页右侧推荐区域添加指定UP主的视频；支持本地和Gitee云端控制视频播放
 // @author       You
 // @match        https://www.bilibili.com/video/*
@@ -19,8 +19,8 @@
     'use strict';
 
     // ========== 配置区域 ==========
-    // 在这里添加你想要推荐的UP主的UID（mid）
-    const TARGET_UP_MIDS = [
+    // 本地默认配置：云端配置获取失败或字段缺失时使用
+    const DEFAULT_TARGET_UP_MIDS = [
         '326427334','254463269','192063031','26108626','1537646108','3546856531429665','1423802684','2000819931','563396855'
 
     ];
@@ -31,17 +31,17 @@
     const ORIGINAL_RECOMMEND_COUNT = 0;
 
     // 屏蔽的UP主UID列表（这些UP主的视频将无法播放，显示"视频已下架"）
-    const BLOCKED_UP_MIDS = [
+    const DEFAULT_BLOCKED_UP_MIDS = [
         '39977118',
         '1391326193',
         '3546954380348053',
         '6057259'
     ];
 
-    // Gitee 云端播放开关文本地址。请填写 Gitee 文件的「原始数据」地址，例如：
-    // https://gitee.com/你的用户名/你的仓库/raw/master/bilibili-play-control.txt
-    // 支持内容：allow/true/1/on/enable 表示允许播放；block/deny/false/0/off/disable 表示禁止播放。
-    // 也支持 JSON：{"allow":true}、{"allowPlay":false,"message":"休息一下"}、{"enabled":true}
+    // Gitee 云端配置地址。请填写 Gitee 文件的「原始数据」地址，例如：
+    // https://gitee.com/你的用户名/你的仓库/raw/master/bilibili.json
+    // 推荐 JSON：{"allowPlay":true,"targetUpMids":["326427334"],"blockedUpMids":["39977118"],"message":"休息一下"}
+    // 兼容纯文本：allow/true/1/on/enable 表示允许播放；block/deny/false/0/off/disable 表示禁止播放。
     const CLOUD_CONTROL_URL = 'https://raw.giteeusercontent.com/beijiguangyong/config/raw/master/bilibili.json';
     // 云端校验失败时是否禁止播放：false 表示网络异常时不影响播放，true 表示校验失败也禁播
     const CLOUD_CONTROL_FAIL_CLOSED = false;
@@ -859,6 +859,26 @@
         return Boolean(value);
     }
 
+    function normalizeMidList(value) {
+        if (!Array.isArray(value)) return null;
+        return value
+            .map(item => String(item).trim())
+            .filter(Boolean);
+    }
+
+    function getTargetUpMids(cloudControl) {
+        return normalizeMidList(cloudControl?.targetUpMids)
+            ?? normalizeMidList(cloudControl?.recommendUpMids)
+            ?? normalizeMidList(cloudControl?.recommendedUpMids)
+            ?? DEFAULT_TARGET_UP_MIDS;
+    }
+
+    function getBlockedUpMids(cloudControl) {
+        return normalizeMidList(cloudControl?.blockedUpMids)
+            ?? normalizeMidList(cloudControl?.blockedMids)
+            ?? DEFAULT_BLOCKED_UP_MIDS;
+    }
+
     function escapeHtml(text) {
         return String(text || '')
             .replace(/&/g, '&amp;')
@@ -889,12 +909,12 @@
         try {
             const json = JSON.parse(content);
             const allowValue = json.allow ?? json.allowPlay ?? json.enabled ?? json.play;
-            if (allowValue !== undefined) {
-                return {
-                    allow: normalizeCloudBoolean(allowValue),
-                    message: json.message || json.reason || ''
-                };
-            }
+            return {
+                allow: allowValue === undefined ? true : normalizeCloudBoolean(allowValue),
+                message: json.message || json.reason || '',
+                targetUpMids: normalizeMidList(json.targetUpMids ?? json.recommendUpMids ?? json.recommendedUpMids),
+                blockedUpMids: normalizeMidList(json.blockedUpMids ?? json.blockedMids)
+            };
         } catch (e) {
             // 非JSON文本按简单开关解析
         }
@@ -972,6 +992,8 @@
             localStorage.setItem(CLOUD_CONTROL_CACHE_KEY, JSON.stringify({
                 allow: cloudControl.allow,
                 message: cloudControl.message || '',
+                targetUpMids: cloudControl.targetUpMids,
+                blockedUpMids: cloudControl.blockedUpMids,
                 updatedAt: Date.now()
             }));
         } catch (e) {
@@ -1177,7 +1199,8 @@
         }
 
         // 判断是否在拉黑名单中
-        const isBlocked = BLOCKED_UP_MIDS.includes(ownerMid);
+        const blockedUpMids = getBlockedUpMids(cloudControl);
+        const isBlocked = blockedUpMids.includes(ownerMid);
 
         // 判断粉丝数是否不足10万
         let isLowFollowers = false;
@@ -1222,28 +1245,37 @@
             console.log('✅ WBI密钥获取成功');
 
             // 获取所有UP主的视频
-            console.log(`📥 开始获取 ${TARGET_UP_MIDS.length} 个UP主的视频...`);
+            const cloudControl = await getCloudPlayControl();
+            writeCachedCloudControl(cloudControl);
+            if (!cloudControl.allow) {
+                console.log('🚫 云端播放控制已禁止访问播放页，跳过推荐视频加载');
+                return;
+            }
+
+            const targetUpMids = getTargetUpMids(cloudControl);
+            console.log(`📥 开始获取 ${targetUpMids.length} 个UP主的视频...`);
+            allVideos = [];
 
             // 添加延迟函数，避免请求过快被ban
             const delay = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 
             // 逐个获取UP主视频，每次请求间隔500ms
             const results = [];
-            for (let i = 0; i < TARGET_UP_MIDS.length; i++) {
-                const mid = TARGET_UP_MIDS[i];
-                console.log(`正在获取UP主 ${mid} (${i + 1}/${TARGET_UP_MIDS.length})...`);
+            for (let i = 0; i < targetUpMids.length; i++) {
+                const mid = targetUpMids[i];
+                console.log(`正在获取UP主 ${mid} (${i + 1}/${targetUpMids.length})...`);
                 const videos = await fetchUploaderVideos(mid, wbiKeys);
                 results.push(videos);
 
                 // 如果不是最后一个，等待500ms再请求下一个
-                if (i < TARGET_UP_MIDS.length - 1) {
+                if (i < targetUpMids.length - 1) {
                     await delay(500);
                 }
             }
 
             // 合并所有视频
             results.forEach((videos, index) => {
-                console.log(`UP主 ${TARGET_UP_MIDS[index]}: 获取到 ${videos.length} 个视频`);
+                console.log(`UP主 ${targetUpMids[index]}: 获取到 ${videos.length} 个视频`);
                 allVideos = allVideos.concat(videos);
             });
 

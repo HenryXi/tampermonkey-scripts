@@ -20,17 +20,34 @@
 
 ## B站播放云端控制
 
-`scripts/bilibili-custom-recommendations.user.js` 支持读取 Gitee 原始文本控制是否允许播放：
+`scripts/bilibili-custom-recommendations.user.js` 支持读取 Gitee 原始 JSON 控制播放开关、推荐 UP 主和屏蔽 UP 主：
 
-1. 在 Gitee 新建一个文本文件，例如 `bilibili-play-control.txt`
-2. 点击文件的「原始数据」，复制形如 `https://gitee.com/用户名/仓库/raw/master/bilibili-play-control.txt` 的地址
+1. 在 Gitee 新建一个 JSON 文件，例如 `bilibili.json`
+2. 点击文件的「原始数据」，复制形如 `https://gitee.com/用户名/仓库/raw/master/bilibili.json` 的地址
 3. 填入脚本顶部配置 `CLOUD_CONTROL_URL`
 
-文本内容支持：
+推荐配置格式：
+
+```json
+{
+  "allowPlay": true,
+  "message": "休息一下，稍后再看",
+  "targetUpMids": ["326427334", "254463269"],
+  "blockedUpMids": ["39977118", "1391326193"]
+}
+```
+
+字段说明：
+
+- `allowPlay`：整体播放开关，`true` 允许，`false` 禁止并显示整页提示
+- `message`：`allowPlay` 为 `false` 时展示的提示文案
+- `targetUpMids`：右侧自定义推荐视频使用的 UP 主 UID 列表
+- `blockedUpMids`：访问这些 UP 主的视频时，播放器内显示“视频已下架”
+
+整体开关也兼容纯文本：
 
 - `allow`、`true`、`1`、`on`、`enable`：允许播放
 - `block`、`deny`、`false`、`0`、`off`、`disable`：禁止播放
-- JSON 示例：`{"allowPlay":false,"message":"休息一下"}`
 
 ## 目录结构
 
