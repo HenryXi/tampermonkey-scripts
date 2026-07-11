@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         B站自定义播放页
 // @namespace    http://tampermonkey.net/
-// @version      1.0.5
+// @version      1.0.6
 // @description  B站播放页定制：云端时间窗口、右侧推荐、结束页推荐、UP屏蔽与播放保护
 // @author       You
 // @match        https://www.bilibili.com/video/*
@@ -581,6 +581,10 @@
             return document.querySelector('#bilibili-player, #player_module, .bpx-player-container');
         },
 
+        playerVideo() {
+            return this.playerRoot()?.querySelector('video') || document.querySelector('video');
+        },
+
         safeRightContainer() {
             const selectors = [
                 '#reco_list',
@@ -667,10 +671,27 @@
         },
 
         pauseVideo() {
-            const video = document.querySelector('video');
+            const video = Dom.playerVideo();
             if (video) {
                 video.pause();
                 video.volume = 0;
+            }
+        },
+
+        freezeVideo(video) {
+            if (!video) return;
+            if (!video.dataset.customPlayPagePreviousMuted) {
+                video.dataset.customPlayPagePreviousMuted = video.muted ? 'true' : 'false';
+            }
+            video.muted = true;
+            video.pause();
+        },
+
+        releaseVideo(video) {
+            if (!video) return;
+            if (video.dataset.customPlayPagePreviousMuted) {
+                video.muted = video.dataset.customPlayPagePreviousMuted === 'true';
+                delete video.dataset.customPlayPagePreviousMuted;
             }
         },
 
@@ -708,44 +729,53 @@
             }
         },
 
+        cleanupFrozenVideos() {
+            document.querySelectorAll('video[data-custom-play-page-previous-muted]').forEach(video => this.releaseVideo(video));
+        },
+
         restoreVideoVolume() {
-            const video = document.querySelector('video');
+            const video = Dom.playerVideo();
             if (video && video.volume === 0) video.volume = 1;
         },
 
         async run(cloudConfig) {
             const bvid = Util.getBvid();
-            if (!bvid) return;
+            if (!bvid) return { allow: false, reason: 'missing_bvid' };
 
             const playbackState = TimeWindow.state(cloudConfig);
             if (!playbackState.allow) {
                 this.showCloudBlock(playbackState.message);
-                return;
+                return { allow: false, reason: playbackState.reason };
             }
             this.removeCloudBlock();
 
+            const video = Dom.playerVideo();
+            this.freezeVideo(video);
+
             const ownerMid = await BiliApi.fetchCurrentVideoOwnerMid(bvid);
-            if (Util.getBvid() !== bvid) return;
+            if (Util.getBvid() !== bvid) return { allow: false, reason: 'route_changed' };
             if (!ownerMid) {
                 this.showPlayerBlock();
-                return;
+                return { allow: false, reason: 'missing_owner' };
             }
 
             const blockedMids = cloudConfig.blockedUpMids || Config.defaultBlockedUpMids;
             let shouldShowRemoved = blockedMids.includes(ownerMid);
             if (!shouldShowRemoved) {
                 const follower = await BiliApi.fetchUploaderFollower(ownerMid);
-                if (Util.getBvid() !== bvid) return;
+                if (Util.getBvid() !== bvid) return { allow: false, reason: 'route_changed' };
                 shouldShowRemoved = follower === null || follower < Config.minFollowerCount;
             }
 
             if (shouldShowRemoved) {
                 this.showPlayerBlock();
-                return;
+                return { allow: false, reason: 'removed' };
             }
 
             this.removePlayerBlock();
+            this.releaseVideo(video);
             this.restoreVideoVolume();
+            return { allow: true, reason: 'allowed' };
         }
     };
 
@@ -889,24 +919,44 @@
             const cached = RecommendationCache.read(targetMids);
             if (cached) return cached;
 
-            const wbiKeys = await BiliApi.getWbiKeys();
-            const allVideos = [];
-            for (let index = 0; index < targetMids.length; index++) {
-                const mid = targetMids[index];
-                Log.info(`获取 UP主 ${mid} 视频 (${index + 1}/${targetMids.length})`);
-                const videos = await BiliApi.fetchUploaderVideos(mid, wbiKeys);
-                allVideos.push(...videos);
-                if (index < targetMids.length - 1) await Util.delay(Config.uploaderRequestInterval);
+            try {
+                const wbiKeys = await BiliApi.getWbiKeys();
+                const allVideos = [];
+                for (let index = 0; index < targetMids.length; index++) {
+                    const mid = targetMids[index];
+                    Log.info(`获取 UP主 ${mid} 视频 (${index + 1}/${targetMids.length})`);
+                    const videos = await BiliApi.fetchUploaderVideos(mid, wbiKeys);
+                    allVideos.push(...videos);
+                    if (index < targetMids.length - 1) await Util.delay(Config.uploaderRequestInterval);
+                }
+                if (allVideos.length) RecommendationCache.write(targetMids, allVideos);
+                return allVideos;
+            } catch (error) {
+                Log.warn('加载推荐视频失败，跳过右侧推荐渲染', error);
+                return [];
             }
-            if (allVideos.length) RecommendationCache.write(targetMids, allVideos);
-            return allVideos;
+        },
+
+        async renderRecommendations(runId, bvid, cloudConfig) {
+            const videos = await this.loadRecommendations(cloudConfig);
+            if (runId !== State.routeRunId || Util.getBvid() !== bvid || !videos.length) return;
+            State.recommendations = videos;
+            await Dom.waitFor(() => RightRecommendations.inject(videos), { timeout: 10000, interval: 500 });
+            if (runId !== State.routeRunId || Util.getBvid() !== bvid) return;
+            EndScreenRecommendations.bind(videos);
         },
 
         async run() {
             const runId = ++State.routeRunId;
+            const bvid = Util.getBvid();
+            if (!bvid) return;
             Log.info('启动播放页定制逻辑');
+            const videoPromise = Dom.waitFor(() => Dom.playerVideo(), { timeout: 10000, interval: 100 }).then(video => {
+                if (runId === State.routeRunId && Util.getBvid() === bvid) PlaybackGuard.freezeVideo(video);
+                return video;
+            });
             const cloudConfig = await CloudConfig.load();
-            if (runId !== State.routeRunId) return;
+            if (runId !== State.routeRunId || Util.getBvid() !== bvid) return;
 
             const playbackState = TimeWindow.state(cloudConfig);
             if (!playbackState.allow) {
@@ -914,18 +964,16 @@
                 return;
             }
             PlaybackGuard.removeCloudBlock();
-            await Dom.waitFor(() => Dom.playerRoot(), { timeout: 10000, interval: 200 });
-            if (runId !== State.routeRunId) return;
+            await videoPromise;
+            if (runId !== State.routeRunId || Util.getBvid() !== bvid) return;
 
             await PlaybackGuard.run(cloudConfig);
-            if (runId !== State.routeRunId) return;
+            if (runId !== State.routeRunId || Util.getBvid() !== bvid) return;
             MiniPlayerGuard.start();
 
-            const videos = await this.loadRecommendations(cloudConfig);
-            if (runId !== State.routeRunId || !videos.length) return;
-            State.recommendations = videos;
-            await Dom.waitFor(() => RightRecommendations.inject(videos), { timeout: 10000, interval: 500 });
-            EndScreenRecommendations.bind(videos);
+            this.renderRecommendations(runId, bvid, cloudConfig).catch(error => {
+                Log.warn('渲染推荐视频失败', error);
+            });
         },
 
         watchRoute() {
@@ -940,6 +988,7 @@
                     MiniPlayerGuard.stop();
                     PlaybackGuard.removeCloudBlock();
                     PlaybackGuard.removePlayerBlock();
+                    PlaybackGuard.cleanupFrozenVideos();
                     RightRecommendations.cleanup();
                     clearTimeout(State.routeTimer);
                     State.routeTimer = setTimeout(() => this.run(), 800);
