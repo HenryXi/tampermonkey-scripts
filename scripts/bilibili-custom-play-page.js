@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         B站自定义播放页
 // @namespace    http://tampermonkey.net/
-// @version      1.0.0
+// @version      1.0.1
 // @description  B站播放页定制：云端时间窗口、右侧推荐、结束页推荐、UP屏蔽与播放保护
 // @author       You
 // @match        https://www.bilibili.com/video/*
@@ -42,6 +42,27 @@
         endListenerVideo: null,
         miniObserver: null
     };
+
+    function injectBaseStyles() {
+        if (document.getElementById('custom-play-page-base-style')) return;
+        const style = document.createElement('style');
+        style.id = 'custom-play-page-base-style';
+        style.textContent = `
+            #bilibili-player .bpx-player-container[data-screen="mini"],
+            #player_module .bpx-player-container[data-screen="mini"] {
+                display: none !important;
+            }
+            .custom-play-page-right-root .video-page-card-small:not(.custom-play-page-card),
+            .custom-play-page-right-root .rec-list,
+            .custom-play-page-right-root .next-play,
+            .custom-play-page-right-root [data-report*="related_rec"],
+            .custom-play-page-right-root .rcmd-tab,
+            .custom-play-page-right-root [class*="rcmd-tab"] {
+                display: none !important;
+            }
+        `;
+        (document.head || document.documentElement).appendChild(style);
+    }
 
     const Log = {
         info: (...args) => console.log('[B站自定义播放页]', ...args),
@@ -548,6 +569,7 @@
         safeRightContainer() {
             const selectors = [
                 '#reco_list',
+                '#danmukuBox',
                 '#mirror-vdcon + .right-container',
                 '.video-container-v1 .right-container',
                 '.video-container .right-container',
@@ -558,8 +580,9 @@
                     if (this.isHeaderElement(element)) continue;
                     const rect = element.getBoundingClientRect();
                     const looksRightSide = rect.width > 220 && rect.left > window.innerWidth * 0.45;
+                    const isKnownRightRoot = ['reco_list', 'danmukuBox'].includes(element.id) || element.classList.contains('right-container') || element.classList.contains('right-container-inner');
                     const hasRecommendContent = element.id === 'reco_list' || element.querySelector('.video-page-card-small, .rec-list, .next-play, [data-report*="related_rec"]');
-                    if (looksRightSide && hasRecommendContent) {
+                    if (looksRightSide && (hasRecommendContent || isKnownRightRoot)) {
                         return element.querySelector('#reco_list') || element;
                     }
                 }
@@ -650,6 +673,11 @@
             document.getElementById('custom-play-page-player-block')?.remove();
         },
 
+        restoreVideoVolume() {
+            const video = document.querySelector('video');
+            if (video && video.volume === 0) video.volume = 1;
+        },
+
         async run(cloudConfig) {
             const bvid = Util.getBvid();
             if (!bvid) return;
@@ -660,7 +688,6 @@
                 return;
             }
             this.removeCloudBlock();
-            this.removePlayerBlock();
 
             const ownerMid = await BiliApi.fetchCurrentVideoOwnerMid(bvid);
             if (!ownerMid || Util.getBvid() !== bvid) return;
@@ -673,7 +700,11 @@
             const follower = await BiliApi.fetchUploaderFollower(ownerMid);
             if (follower !== null && follower < Config.minFollowerCount) {
                 this.showPlayerBlock();
+                return;
             }
+
+            this.removePlayerBlock();
+            this.restoreVideoVolume();
         }
     };
 
@@ -686,6 +717,7 @@
             }
             if (Dom.isHeaderElement(container)) return false;
 
+            container.classList.add('custom-play-page-right-root');
             container.querySelector('.custom-play-page-right-section')?.remove();
             container.querySelectorAll('.video-page-card-small:not(.custom-play-page-card), .rec-list, .next-play, [data-report*="related_rec"], .rcmd-tab, [class*="rcmd-tab"]').forEach(element => {
                 if (!Dom.isHeaderElement(element)) element.style.display = 'none';
@@ -845,6 +877,7 @@
         },
 
         start() {
+            injectBaseStyles();
             const cachedConfig = CloudConfig.readCache();
             const cachedState = TimeWindow.state(cachedConfig);
             if (cachedConfig && !cachedState.allow) PlaybackGuard.showCloudBlock(cachedState.message);
