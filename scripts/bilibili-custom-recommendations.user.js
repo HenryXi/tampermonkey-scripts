@@ -976,7 +976,6 @@
                 <div style="font-size: 64px; line-height: 1; margin-bottom: 22px;">⏸️</div>
                 <div style="font-size: 26px; font-weight: 700; margin-bottom: 12px; color: #f9fafb;">暂时无法访问 B站播放页</div>
                 <div style="font-size: 15px; line-height: 1.8; color: #cbd5e1; margin-bottom: 24px;">${escapeHtml(message || '云端规则已限制播放，请稍后再试。')}</div>
-                <div style="font-size: 12px; color: #64748b;">该提示由 Gitee 云端配置控制</div>
             </div>
         `;
 
