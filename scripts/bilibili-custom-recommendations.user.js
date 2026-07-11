@@ -43,7 +43,7 @@
 
     // Gitee 云端配置地址。请填写 Gitee 文件的「原始数据」地址，例如：
     // https://gitee.com/你的用户名/你的仓库/raw/master/bilibili.json
-    // 推荐 JSON：{"allowPlay":true,"targetUpMids":["326427334"],"blockedUpMids":["39977118"],"fetchUploaderInterval":1500,"message":"休息一下"}
+    // 推荐 JSON：{"allowPlay":true,"targetUpMids":["326427334"],"blockedUpMids":["39977118"],"message":"休息一下"}
     // 兼容纯文本：allow/true/1/on/enable 表示允许播放；block/deny/false/0/off/disable 表示禁止播放。
     const CLOUD_CONTROL_URL = 'https://raw.giteeusercontent.com/beijiguangyong/config/raw/master/bilibili.json';
     // 云端校验失败时是否禁止播放：false 表示网络异常时不影响播放，true 表示校验失败也禁播
@@ -890,14 +890,6 @@
             ?? DEFAULT_BLOCKED_UP_MIDS;
     }
 
-    function getFetchUploaderInterval(cloudControl) {
-        const interval = Number(cloudControl?.fetchUploaderInterval ?? cloudControl?.requestInterval);
-        if (Number.isFinite(interval) && interval >= 500) {
-            return interval;
-        }
-        return DEFAULT_FETCH_UPLOADER_INTERVAL;
-    }
-
     function escapeHtml(text) {
         return String(text || '')
             .replace(/&/g, '&amp;')
@@ -932,8 +924,7 @@
                 allow: allowValue === undefined ? true : normalizeCloudBoolean(allowValue),
                 message: json.message || json.reason || '',
                 targetUpMids: normalizeMidList(json.targetUpMids ?? json.recommendUpMids ?? json.recommendedUpMids),
-                blockedUpMids: normalizeMidList(json.blockedUpMids ?? json.blockedMids),
-                fetchUploaderInterval: json.fetchUploaderInterval ?? json.requestInterval
+                blockedUpMids: normalizeMidList(json.blockedUpMids ?? json.blockedMids)
             };
         } catch (e) {
             // 非JSON文本按简单开关解析
@@ -1014,7 +1005,6 @@
                 message: cloudControl.message || '',
                 targetUpMids: cloudControl.targetUpMids,
                 blockedUpMids: cloudControl.blockedUpMids,
-                fetchUploaderInterval: cloudControl.fetchUploaderInterval,
                 updatedAt: Date.now()
             }));
         } catch (e) {
@@ -1274,9 +1264,8 @@
             }
 
             const targetUpMids = getTargetUpMids(cloudControl);
-            const fetchUploaderInterval = getFetchUploaderInterval(cloudControl);
             console.log(`📥 开始获取 ${targetUpMids.length} 个UP主的视频...`);
-            console.log(`⏱️ UP主视频请求间隔：${fetchUploaderInterval}ms`);
+            console.log(`⏱️ UP主视频请求间隔：${DEFAULT_FETCH_UPLOADER_INTERVAL}ms`);
             allVideos = [];
 
             // 添加延迟函数，避免请求过快被ban
@@ -1292,7 +1281,7 @@
 
                 // 如果不是最后一个，等待一段时间再请求下一个
                 if (i < targetUpMids.length - 1) {
-                    await delay(fetchUploaderInterval);
+                    await delay(DEFAULT_FETCH_UPLOADER_INTERVAL);
                 }
             }
 

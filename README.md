@@ -33,8 +33,7 @@
   "allowPlay": true,
   "message": "休息一下，稍后再看",
   "targetUpMids": ["326427334", "254463269"],
-  "blockedUpMids": ["39977118", "1391326193"],
-  "fetchUploaderInterval": 1500
+  "blockedUpMids": ["39977118", "1391326193"]
 }
 ```
 
@@ -44,7 +43,6 @@
 - `message`：`allowPlay` 为 `false` 时展示的提示文案
 - `targetUpMids`：右侧自定义推荐视频使用的 UP 主 UID 列表
 - `blockedUpMids`：访问这些 UP 主的视频时，播放器内显示“视频已下架”
-- `fetchUploaderInterval`：获取多个 UP 主视频时的请求间隔，单位毫秒；遇到 `request was banned` 可调大
 
 整体开关也兼容纯文本：
 
