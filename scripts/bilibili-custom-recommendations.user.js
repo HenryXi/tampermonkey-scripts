@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         B站自定义推荐视频
 // @namespace    http://tampermonkey.net/
-// @version      1.10.0
+// @version      1.11.0
 // @description  在B站视频播放页右侧推荐区域添加指定UP主的视频；支持本地和Gitee云端控制视频播放
 // @author       You
 // @match        https://www.bilibili.com/video/*
@@ -50,6 +50,8 @@
     const CLOUD_CONTROL_FAIL_CLOSED = false;
     const CLOUD_CONTROL_TIMEOUT = 5000;
     const CLOUD_CONTROL_CACHE_KEY = 'bilibili_custom_recommendations_cloud_control';
+    const RECOMMENDATION_VIDEO_CACHE_KEY = 'bilibili_custom_recommendations_video_cache';
+    const RECOMMENDATION_VIDEO_CACHE_TTL = 12 * 60 * 60 * 1000;
     // ==============================
 
     // 存储获取到的视频
@@ -890,6 +892,46 @@
             ?? DEFAULT_BLOCKED_UP_MIDS;
     }
 
+    function getRecommendationCacheSignature(targetUpMids) {
+        return targetUpMids.join(',');
+    }
+
+    function readCachedRecommendationVideos(targetUpMids) {
+        try {
+            const cached = localStorage.getItem(RECOMMENDATION_VIDEO_CACHE_KEY);
+            if (!cached) return null;
+
+            const data = JSON.parse(cached);
+            const isSameTargets = data.signature === getRecommendationCacheSignature(targetUpMids);
+            const isFresh = Date.now() - Number(data.updatedAt || 0) < RECOMMENDATION_VIDEO_CACHE_TTL;
+            const hasVideos = Array.isArray(data.videos) && data.videos.length > 0;
+
+            if (isSameTargets && isFresh && hasVideos) {
+                console.log(`✅ 命中推荐视频缓存：${data.videos.length} 个视频`);
+                return data.videos;
+            }
+        } catch (e) {
+            console.warn('⚠️ 读取推荐视频缓存失败:', e);
+        }
+        return null;
+    }
+
+    function writeCachedRecommendationVideos(targetUpMids, videos) {
+        if (!Array.isArray(videos) || videos.length === 0) return;
+
+        try {
+            localStorage.setItem(RECOMMENDATION_VIDEO_CACHE_KEY, JSON.stringify({
+                signature: getRecommendationCacheSignature(targetUpMids),
+                targetUpMids,
+                videos,
+                updatedAt: Date.now()
+            }));
+            console.log(`💾 已缓存 ${videos.length} 个推荐视频，有效期12小时`);
+        } catch (e) {
+            console.warn('⚠️ 写入推荐视频缓存失败:', e);
+        }
+    }
+
     function escapeHtml(text) {
         return String(text || '')
             .replace(/&/g, '&amp;')
@@ -1242,6 +1284,38 @@
 
     // ======================================
 
+    function startRecommendationRendering() {
+        // 等待页面加载完成后注入
+        let retryCount = 0;
+        const maxRetries = 20;
+
+        const tryInject = setInterval(() => {
+            retryCount++;
+
+            if (injectCustomRecommendations()) {
+                clearInterval(tryInject);
+            } else if (retryCount >= maxRetries) {
+                console.warn('⚠️ 达到最大重试次数，停止尝试');
+                clearInterval(tryInject);
+            }
+        }, 500);
+
+        // 设置视频结束监听器
+        let videoRetryCount = 0;
+        const videoMaxRetries = 20;
+
+        const trySetupListener = setInterval(() => {
+            videoRetryCount++;
+
+            if (setupVideoEndListener()) {
+                clearInterval(trySetupListener);
+            } else if (videoRetryCount >= videoMaxRetries) {
+                console.warn('⚠️ 未能设置视频结束监听器');
+                clearInterval(trySetupListener);
+            }
+        }, 500);
+    }
+
     // 主函数
     async function main() {
         console.log('🚀 B站自定义推荐脚本启动...');
@@ -1250,12 +1324,7 @@
         checkAndBlockVideo();
 
         try {
-            // 先获取WBI密钥
-            console.log('🔑 正在获取WBI密钥...');
-            const wbiKeys = await getWbiKeys();
-            console.log('✅ WBI密钥获取成功');
-
-            // 获取所有UP主的视频
+            // 获取云端配置
             const cloudControl = await getCloudPlayControl();
             writeCachedCloudControl(cloudControl);
             if (!cloudControl.allow) {
@@ -1264,6 +1333,18 @@
             }
 
             const targetUpMids = getTargetUpMids(cloudControl);
+            const cachedVideos = readCachedRecommendationVideos(targetUpMids);
+            if (cachedVideos) {
+                allVideos = cachedVideos;
+                startRecommendationRendering();
+                return;
+            }
+
+            // 缓存未命中时，再获取WBI密钥并请求所有UP主的视频
+            console.log('🔑 正在获取WBI密钥...');
+            const wbiKeys = await getWbiKeys();
+            console.log('✅ WBI密钥获取成功');
+
             console.log(`📥 开始获取 ${targetUpMids.length} 个UP主的视频...`);
             console.log(`⏱️ UP主视频请求间隔：${DEFAULT_FETCH_UPLOADER_INTERVAL}ms`);
             allVideos = [];
@@ -1301,35 +1382,8 @@
                 return;
             }
 
-            // 等待页面加载完成后注入
-            let retryCount = 0;
-            const maxRetries = 20;
-
-            const tryInject = setInterval(() => {
-                retryCount++;
-
-                if (injectCustomRecommendations()) {
-                    clearInterval(tryInject);
-                } else if (retryCount >= maxRetries) {
-                    console.warn('⚠️ 达到最大重试次数，停止尝试');
-                    clearInterval(tryInject);
-                }
-            }, 500);
-
-            // 设置视频结束监听器
-            let videoRetryCount = 0;
-            const videoMaxRetries = 20;
-
-            const trySetupListener = setInterval(() => {
-                videoRetryCount++;
-
-                if (setupVideoEndListener()) {
-                    clearInterval(trySetupListener);
-                } else if (videoRetryCount >= videoMaxRetries) {
-                    console.warn('⚠️ 未能设置视频结束监听器');
-                    clearInterval(trySetupListener);
-                }
-            }, 500);
+            writeCachedRecommendationVideos(targetUpMids, allVideos);
+            startRecommendationRendering();
         } catch (error) {
             console.error('❌ 脚本执行失败:', error);
             console.error('💡 可能的解决方案：');
