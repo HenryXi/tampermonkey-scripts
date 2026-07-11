@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         B站自定义推荐视频
 // @namespace    http://tampermonkey.net/
-// @version      1.12.1
+// @version      1.12.2
 // @description  在B站视频播放页右侧推荐区域添加指定UP主的视频；支持本地和Gitee云端控制视频播放
 // @author       You
 // @match        https://www.bilibili.com/video/*
@@ -146,7 +146,8 @@
         for (const mutation of mutations) {
             if (mutation.type === 'attributes' && mutation.attributeName === 'data-screen') {
                 const node = mutation.target;
-                if (node.dataset.screen === 'mini') {
+                const isPlayerContainer = node.matches?.('.bpx-player-container') || node.closest?.('#bilibili-player');
+                if (isPlayerContainer && node.dataset.screen === 'mini') {
                     node.dataset.screen = 'normal';
                     // 同时清除B站注入的定位style
                     node.style.removeProperty('right');
