@@ -974,7 +974,7 @@
         mask.innerHTML = `
             <div style="box-sizing: border-box; width: min(520px, calc(100vw - 48px)); padding: 42px 36px; border-radius: 24px; background: rgba(17, 24, 39, 0.92); border: 1px solid rgba(148, 163, 184, 0.25); box-shadow: 0 24px 80px rgba(0, 0, 0, 0.45); text-align: center;">
                 <div style="font-size: 64px; line-height: 1; margin-bottom: 22px;">⏸️</div>
-                <div style="font-size: 26px; font-weight: 700; margin-bottom: 12px; color: #f9fafb;">暂时无法访问 B站播放页</div>
+                <div style="font-size: 26px; font-weight: 700; margin-bottom: 12px; color: #f9fafb;">暂时无法访问</div>
                 <div style="font-size: 15px; line-height: 1.8; color: #cbd5e1; margin-bottom: 24px;">${escapeHtml(message || '云端规则已限制播放，请稍后再试。')}</div>
             </div>
         `;
