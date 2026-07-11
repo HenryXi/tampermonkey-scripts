@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         B站自定义推荐视频
 // @namespace    http://tampermonkey.net/
-// @version      1.12.0
+// @version      1.12.1
 // @description  在B站视频播放页右侧推荐区域添加指定UP主的视频；支持本地和Gitee云端控制视频播放
 // @author       You
 // @match        https://www.bilibili.com/video/*
@@ -80,9 +80,13 @@
             .video-page-card-small[data-report*="related_rec"] {
                 display: none !important;
             }
-            /* 隐藏右侧 rcmd-tab 推荐集合，避免页面加载后闪现 */
-            .rcmd-tab,
-            [class*="rcmd-tab"] {
+            /* 隐藏右侧 rcmd-tab 推荐集合，避免页面加载后闪现，避免误伤顶部 right-entry */
+            #reco_list .rcmd-tab,
+            .right-container .rcmd-tab,
+            .right-container-inner .rcmd-tab,
+            #reco_list [class*="rcmd-tab"],
+            .right-container [class*="rcmd-tab"],
+            .right-container-inner [class*="rcmd-tab"] {
                 display: none !important;
             }
             /* 全局禁用迷你播放器浮窗 */
@@ -118,9 +122,13 @@
                     .video-page-card-small[data-report*="related_rec"] {
                         display: none !important;
                     }
-                    /* 隐藏右侧 rcmd-tab 推荐集合，避免页面加载后闪现 */
-                    .rcmd-tab,
-                    [class*="rcmd-tab"] {
+                    /* 隐藏右侧 rcmd-tab 推荐集合，避免页面加载后闪现，避免误伤顶部 right-entry */
+                    #reco_list .rcmd-tab,
+                    .right-container .rcmd-tab,
+                    .right-container-inner .rcmd-tab,
+                    #reco_list [class*="rcmd-tab"],
+                    .right-container [class*="rcmd-tab"],
+                    .right-container-inner [class*="rcmd-tab"] {
                         display: none !important;
                     }
                     /* 全局禁用迷你播放器浮窗 */
