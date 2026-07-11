@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         B站自定义推荐视频
 // @namespace    http://tampermonkey.net/
-// @version      1.11.0
+// @version      1.12.0
 // @description  在B站视频播放页右侧推荐区域添加指定UP主的视频；支持本地和Gitee云端控制视频播放
 // @author       You
 // @match        https://www.bilibili.com/video/*
@@ -43,11 +43,9 @@
 
     // Gitee 云端配置地址。请填写 Gitee 文件的「原始数据」地址，例如：
     // https://gitee.com/你的用户名/你的仓库/raw/master/bilibili.json
-    // 推荐 JSON：{"allowPlay":true,"targetUpMids":["326427334"],"blockedUpMids":["39977118"],"message":"休息一下"}
-    // 兼容纯文本：allow/true/1/on/enable 表示允许播放；block/deny/false/0/off/disable 表示禁止播放。
+    // 推荐 JSON：{"playStartTime":"20:00:00","playEndTime":"21:00:00","targetUpMids":["326427334"],"blockedUpMids":["39977118"],"message":"休息一下"}
+    // 播放时间使用24小时制 HH:mm:ss；配置缺失或格式错误时默认允许播放。
     const CLOUD_CONTROL_URL = 'https://raw.giteeusercontent.com/beijiguangyong/config/raw/master/bilibili.json';
-    // 云端校验失败时是否禁止播放：false 表示网络异常时不影响播放，true 表示校验失败也禁播
-    const CLOUD_CONTROL_FAIL_CLOSED = false;
     const CLOUD_CONTROL_TIMEOUT = 5000;
     const CLOUD_CONTROL_CACHE_KEY = 'bilibili_custom_recommendations_cloud_control';
     const RECOMMENDATION_VIDEO_CACHE_KEY = 'bilibili_custom_recommendations_video_cache';
@@ -861,17 +859,6 @@
     }
 
     // 解析Gitee云端控制文本
-    function normalizeCloudBoolean(value) {
-        if (typeof value === 'boolean') return value;
-        if (typeof value === 'number') return value !== 0;
-        if (typeof value === 'string') {
-            const normalized = value.trim().toLowerCase();
-            if (['allow', 'allowed', 'true', '1', 'on', 'enable', 'enabled', 'yes', 'play'].includes(normalized)) return true;
-            if (['block', 'blocked', 'deny', 'denied', 'false', '0', 'off', 'disable', 'disabled', 'no', 'stop'].includes(normalized)) return false;
-        }
-        return Boolean(value);
-    }
-
     function normalizeMidList(value) {
         if (!Array.isArray(value)) return null;
         return value
@@ -953,46 +940,66 @@
         event.target.pause();
     }
 
+    function parseTimeOfDayToSeconds(value) {
+        if (typeof value !== 'string') return null;
+        const match = value.match(/^(\d{2}):(\d{2}):(\d{2})$/);
+        if (!match) return null;
+
+        const hours = Number(match[1]);
+        const minutes = Number(match[2]);
+        const seconds = Number(match[3]);
+        if (hours > 23 || minutes > 59 || seconds > 59) return null;
+
+        return hours * 3600 + minutes * 60 + seconds;
+    }
+
+    function getCurrentLocalTimeOfDaySeconds() {
+        const now = new Date();
+        return now.getHours() * 3600 + now.getMinutes() * 60 + now.getSeconds();
+    }
+
+    function getCloudPlaybackState(cloudControl) {
+        const startSeconds = parseTimeOfDayToSeconds(cloudControl?.playStartTime);
+        const endSeconds = parseTimeOfDayToSeconds(cloudControl?.playEndTime);
+
+        if (startSeconds === null || endSeconds === null || startSeconds > endSeconds) {
+            return { allow: true };
+        }
+
+        const currentSeconds = getCurrentLocalTimeOfDaySeconds();
+        const allow = currentSeconds >= startSeconds && currentSeconds <= endSeconds;
+        return {
+            allow,
+            message: allow ? '' : (cloudControl.message || '云端规则已限制播放，请稍后再试。')
+        };
+    }
+
     function parseCloudControlText(text) {
         const content = String(text || '').trim();
         if (!content) {
-            return { allow: true };
+            return {};
         }
 
         try {
             const json = JSON.parse(content);
-            const allowValue = json.allow ?? json.allowPlay ?? json.enabled ?? json.play;
             return {
-                allow: allowValue === undefined ? true : normalizeCloudBoolean(allowValue),
+                playStartTime: json.playStartTime,
+                playEndTime: json.playEndTime,
                 message: json.message || json.reason || '',
                 targetUpMids: normalizeMidList(json.targetUpMids ?? json.recommendUpMids ?? json.recommendedUpMids),
                 blockedUpMids: normalizeMidList(json.blockedUpMids ?? json.blockedMids)
             };
         } catch (e) {
-            // 非JSON文本按简单开关解析
+            console.warn('⚠️ 云端播放控制不是有效JSON，默认允许播放');
         }
-
-        const firstLine = content.split(/\r?\n/).map(line => line.trim()).find(line => line && !line.startsWith('#')) || '';
-        const normalized = firstLine.toLowerCase();
-        const allowValues = ['allow', 'allowed', 'true', '1', 'on', 'enable', 'enabled', 'yes', 'play'];
-        const blockValues = ['block', 'blocked', 'deny', 'denied', 'false', '0', 'off', 'disable', 'disabled', 'no', 'stop'];
-
-        if (allowValues.includes(normalized)) {
-            return { allow: true };
-        }
-        if (blockValues.includes(normalized)) {
-            return { allow: false };
-        }
-
-        console.warn('⚠️ 云端播放控制内容无法识别，默认允许播放:', firstLine);
-        return { allow: true };
+        return {};
     }
 
     // 从Gitee读取云端播放开关
     function fetchCloudPlayControl() {
         return new Promise((resolve) => {
             if (!CLOUD_CONTROL_URL) {
-                resolve({ allow: true, skipped: true });
+                resolve({ skipped: true });
                 return;
             }
 
@@ -1009,16 +1016,16 @@
                         resolve(parseCloudControlText(response.responseText));
                     } else {
                         console.warn(`⚠️ 云端播放控制请求失败，HTTP ${response.status}`);
-                        resolve({ allow: !CLOUD_CONTROL_FAIL_CLOSED, error: true });
+                        resolve({ error: true });
                     }
                 },
                 ontimeout: function() {
                     console.warn('⚠️ 云端播放控制请求超时');
-                    resolve({ allow: !CLOUD_CONTROL_FAIL_CLOSED, error: true });
+                    resolve({ error: true });
                 },
                 onerror: function() {
                     console.warn('⚠️ 云端播放控制请求异常');
-                    resolve({ allow: !CLOUD_CONTROL_FAIL_CLOSED, error: true });
+                    resolve({ error: true });
                 }
             });
         });
@@ -1043,7 +1050,8 @@
     function writeCachedCloudControl(cloudControl) {
         try {
             localStorage.setItem(CLOUD_CONTROL_CACHE_KEY, JSON.stringify({
-                allow: cloudControl.allow,
+                playStartTime: cloudControl.playStartTime,
+                playEndTime: cloudControl.playEndTime,
                 message: cloudControl.message || '',
                 targetUpMids: cloudControl.targetUpMids,
                 blockedUpMids: cloudControl.blockedUpMids,
@@ -1110,15 +1118,17 @@
         if (!CLOUD_CONTROL_URL) return;
 
         const cachedControl = readCachedCloudControl();
-        if (cachedControl && !cachedControl.allow) {
-            showCloudBlockedPage(cachedControl.message || '云端规则已限制播放，请稍后再试。');
+        const cachedState = getCloudPlaybackState(cachedControl);
+        if (cachedControl && !cachedState.allow) {
+            showCloudBlockedPage(cachedState.message);
         }
 
         getCloudPlayControl().then((cloudControl) => {
             writeCachedCloudControl(cloudControl);
-            if (!cloudControl.allow) {
+            const playbackState = getCloudPlaybackState(cloudControl);
+            if (!playbackState.allow) {
                 console.log('🚫 云端播放控制已禁止访问播放页');
-                showCloudBlockedPage(cloudControl.message || '云端规则已限制播放，请稍后再试。');
+                showCloudBlockedPage(playbackState.message);
             } else {
                 removeCloudBlockedPage();
             }
@@ -1237,9 +1247,10 @@
         const cloudControl = await getCloudPlayControl();
         writeCachedCloudControl(cloudControl);
         if (getCurrentVideoBvid() !== bvid) return;
-        if (!cloudControl.allow) {
+        const playbackState = getCloudPlaybackState(cloudControl);
+        if (!playbackState.allow) {
             console.log('🚫 云端播放控制已禁止播放当前视频');
-            showCloudBlockedPage(cloudControl.message || '云端规则已限制播放，请稍后再试。');
+            showCloudBlockedPage(playbackState.message);
             return;
         }
         removeCloudBlockedPage();
@@ -1327,7 +1338,8 @@
             // 获取云端配置
             const cloudControl = await getCloudPlayControl();
             writeCachedCloudControl(cloudControl);
-            if (!cloudControl.allow) {
+            const playbackState = getCloudPlaybackState(cloudControl);
+            if (!playbackState.allow) {
                 console.log('🚫 云端播放控制已禁止访问播放页，跳过推荐视频加载');
                 return;
             }

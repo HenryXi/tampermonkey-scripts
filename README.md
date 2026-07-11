@@ -20,7 +20,7 @@
 
 ## B站播放云端控制
 
-`scripts/bilibili-custom-recommendations.user.js` 支持读取 Gitee 原始 JSON 控制播放开关、推荐 UP 主和屏蔽 UP 主：
+`scripts/bilibili-custom-recommendations.user.js` 支持读取 Gitee 原始 JSON 控制播放时间窗口、推荐 UP 主和屏蔽 UP 主：
 
 1. 在 Gitee 新建一个 JSON 文件，例如 `bilibili.json`
 2. 点击文件的「原始数据」，复制形如 `https://gitee.com/用户名/仓库/raw/master/bilibili.json` 的地址
@@ -30,7 +30,8 @@
 
 ```json
 {
-  "allowPlay": true,
+  "playStartTime": "20:00:00",
+  "playEndTime": "21:00:00",
   "message": "休息一下，稍后再看",
   "targetUpMids": ["326427334", "254463269"],
   "blockedUpMids": ["39977118", "1391326193"]
@@ -39,15 +40,12 @@
 
 字段说明：
 
-- `allowPlay`：整体播放开关，`true` 允许，`false` 禁止并显示整页提示
-- `message`：`allowPlay` 为 `false` 时展示的提示文案
+- `playStartTime` / `playEndTime`：每日允许播放的开始/结束时间，使用 24 小时制 `HH:mm:ss`
+- `message`：当前时间不在播放时间窗口内时展示的提示文案
 - `targetUpMids`：右侧自定义推荐视频使用的 UP 主 UID 列表
 - `blockedUpMids`：访问这些 UP 主的视频时，播放器内显示“视频已下架”
 
-整体开关也兼容纯文本：
-
-- `allow`、`true`、`1`、`on`、`enable`：允许播放
-- `block`、`deny`、`false`、`0`、`off`、`disable`：禁止播放
+只有 `playStartTime` 和 `playEndTime` 都是合法时间，且电脑当前时间不在该范围内时才会禁止播放；配置缺失、格式非法或云端请求失败时默认允许播放。
 
 推荐视频会缓存到浏览器本地存储，有效期 12 小时；电脑重启后通常仍然保留，除非清理了浏览器站点数据、无痕模式数据或扩展数据。
 
