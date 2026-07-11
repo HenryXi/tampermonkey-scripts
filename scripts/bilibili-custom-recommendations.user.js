@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         B站自定义推荐视频
 // @namespace    http://tampermonkey.net/
-// @version      1.12.6
+// @version      1.12.7
 // @description  在B站视频播放页右侧推荐区域添加指定UP主的视频；支持本地和Gitee云端控制视频播放
 // @author       You
 // @match        https://www.bilibili.com/video/*
@@ -560,17 +560,43 @@
         return document.querySelector('#bilibili-player, #player_module, .bpx-player-container');
     }
 
+    function isHeaderElement(element) {
+        return Boolean(element?.closest?.('.bili-header, .bili-header__bar, .right-entry, [class*="right-entry"], [class*="rightEntry"]'));
+    }
+
+    function findRecommendationContainer() {
+        const candidates = [
+            '#reco_list',
+            '#mirror-vdcon + .right-container',
+            '.video-container-v1 .right-container',
+            '.video-container .right-container',
+            '.right-container-inner'
+        ];
+
+        for (const selector of candidates) {
+            const elements = document.querySelectorAll(selector);
+            for (const element of elements) {
+                if (isHeaderElement(element)) continue;
+                if (element.querySelector('.video-page-card-small, .rec-list, .next-play, [data-report*="related_rec"]') || element.id === 'reco_list') {
+                    return element.id === 'reco_list' ? element : (element.querySelector('#reco_list') || element);
+                }
+            }
+        }
+
+        return null;
+    }
+
     // 注入自定义推荐视频
     function injectCustomRecommendations() {
         // 查找右侧推荐区域
-        const rightContainer = document.querySelector('#reco_list');
+        const rightContainer = findRecommendationContainer();
 
         if (!rightContainer) {
             console.log('未找到推荐区域，稍后重试...');
             return false;
         }
 
-        if (rightContainer.closest('.bili-header')) {
+        if (isHeaderElement(rightContainer)) {
             console.log('匹配到顶部区域，跳过本次推荐注入');
             return false;
         }
@@ -578,7 +604,7 @@
         // 只注入到播放页右侧推荐列表，避免误伤顶部 right-entry 区域
         const container = rightContainer;
 
-        if (!container || container.closest('.bili-header')) {
+        if (!container || isHeaderElement(container)) {
             console.log('推荐容器异常，跳过本次推荐注入');
             return false;
         }
