@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         B站自定义推荐视频
 // @namespace    http://tampermonkey.net/
-// @version      1.12.4
+// @version      1.12.6
 // @description  在B站视频播放页右侧推荐区域添加指定UP主的视频；支持本地和Gitee云端控制视频播放
 // @author       You
 // @match        https://www.bilibili.com/video/*
@@ -61,7 +61,9 @@
         const style = document.createElement('style');
         style.textContent = `
             /* 隐藏播放器结束界面的原始推荐 */
-            .bpx-player-ending-related-item:not(.custom-end-recommend) {
+            #bilibili-player .bpx-player-ending-related-item:not(.custom-end-recommend),
+            #player_module .bpx-player-ending-related-item:not(.custom-end-recommend),
+            .bpx-player-container .bpx-player-ending-related-item:not(.custom-end-recommend) {
                 display: none !important;
             }
             /* 隐藏右侧原始推荐视频卡片 */
@@ -85,10 +87,6 @@
             #reco_list [class*="rcmd-tab"] {
                 display: none !important;
             }
-            /* 全局禁用迷你播放器浮窗 */
-            .bpx-player-container[data-screen="mini"] {
-                display: none !important;
-            }
         `;
         document.head.appendChild(style);
     } else {
@@ -99,7 +97,9 @@
                 const style = document.createElement('style');
                 style.textContent = `
                     /* 隐藏播放器结束界面的原始推荐 */
-                    .bpx-player-ending-related-item:not(.custom-end-recommend) {
+                    #bilibili-player .bpx-player-ending-related-item:not(.custom-end-recommend),
+                    #player_module .bpx-player-ending-related-item:not(.custom-end-recommend),
+                    .bpx-player-container .bpx-player-ending-related-item:not(.custom-end-recommend) {
                         display: none !important;
                     }
                     /* 隐藏右侧原始推荐视频卡片 */
@@ -123,32 +123,11 @@
                     #reco_list [class*="rcmd-tab"] {
                         display: none !important;
                     }
-                    /* 全局禁用迷你播放器浮窗 */
-                    .bpx-player-container[data-screen="mini"] {
-                        display: none !important;
-                    }
                 `;
                 document.head.appendChild(style);
             }
         }, 10);
     }
-
-    // 全局禁用迷你播放器：监听 data-screen 变为 mini 时立刻改回 normal
-    new MutationObserver((mutations) => {
-        for (const mutation of mutations) {
-            if (mutation.type === 'attributes' && mutation.attributeName === 'data-screen') {
-                const node = mutation.target;
-                const isPlayerContainer = node.matches?.('.bpx-player-container') || node.closest?.('#bilibili-player');
-                if (isPlayerContainer && node.dataset.screen === 'mini') {
-                    node.dataset.screen = 'normal';
-                    // 同时清除B站注入的定位style
-                    node.style.removeProperty('right');
-                    node.style.removeProperty('bottom');
-                    node.style.removeProperty('position');
-                }
-            }
-        }
-    }).observe(document.documentElement, { subtree: true, attributes: true, attributeFilter: ['data-screen'] });
 
     // WBI签名相关
     const mixinKeyEncTab = [
@@ -577,6 +556,10 @@
         }
     }
 
+    function getPlayerRoot() {
+        return document.querySelector('#bilibili-player, #player_module, .bpx-player-container');
+    }
+
     // 注入自定义推荐视频
     function injectCustomRecommendations() {
         // 查找右侧推荐区域
@@ -639,6 +622,12 @@
 
     // 替换播放器上方的推荐视频
     function replacePlayerEndRecommendations() {
+        const playerRoot = getPlayerRoot();
+        if (!playerRoot) {
+            console.log('未找到播放器根节点，无法替换结束推荐');
+            return false;
+        }
+
         // 尝试多个可能的选择器
         const selectors = [
             '.bpx-player-ending-related',
@@ -652,7 +641,7 @@
 
         let endRecommendContainer = null;
         for (const selector of selectors) {
-            endRecommendContainer = document.querySelector(selector);
+            endRecommendContainer = playerRoot.querySelector(selector);
             if (endRecommendContainer) {
                 console.log('找到播放器结束推荐区域，使用选择器:', selector);
                 break;
@@ -671,7 +660,7 @@
         }
 
         // 立即隐藏所有原始推荐视频项
-        const allOriginalItems = document.querySelectorAll('.bpx-player-ending-related-item');
+        const allOriginalItems = playerRoot.querySelectorAll('.bpx-player-ending-related-item');
         allOriginalItems.forEach(item => {
             item.style.display = 'none';
         });
@@ -683,7 +672,7 @@
         ];
 
         elementsToHide.forEach(selector => {
-            const elements = document.querySelectorAll(selector);
+            const elements = playerRoot.querySelectorAll(selector);
             elements.forEach(el => {
                 el.style.display = 'none';
                 console.log('隐藏元素:', selector);
@@ -763,7 +752,9 @@
         video.addEventListener('timeupdate', function() {
             // 当视频播放到最后2秒时，提前隐藏原始推荐视频
             if (video.duration - video.currentTime <= 2 && video.duration > 0) {
-                const originalItems = document.querySelectorAll('.bpx-player-ending-related-item:not(.custom-end-recommend)');
+                const playerRoot = getPlayerRoot();
+                if (!playerRoot) return;
+                const originalItems = playerRoot.querySelectorAll('.bpx-player-ending-related-item:not(.custom-end-recommend)');
                 originalItems.forEach(item => {
                     if (!item.classList.contains('custom-end-recommend')) {
                         item.style.opacity = '0';
