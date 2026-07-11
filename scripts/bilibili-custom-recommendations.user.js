@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         B站自定义推荐视频
 // @namespace    http://tampermonkey.net/
-// @version      1.9.0
+// @version      1.9.1
 // @description  在B站视频播放页右侧推荐区域添加指定UP主的视频；支持本地和Gitee云端控制视频播放
 // @author       You
 // @match        https://www.bilibili.com/video/*
@@ -46,6 +46,7 @@
     // 云端校验失败时是否禁止播放：false 表示网络异常时不影响播放，true 表示校验失败也禁播
     const CLOUD_CONTROL_FAIL_CLOSED = false;
     const CLOUD_CONTROL_TIMEOUT = 5000;
+    const CLOUD_CONTROL_CACHE_KEY = 'bilibili_custom_recommendations_cloud_control';
     // ==============================
 
     // 存储获取到的视频
@@ -957,6 +958,27 @@
         return cloudControlPromise;
     }
 
+    function readCachedCloudControl() {
+        try {
+            const cached = localStorage.getItem(CLOUD_CONTROL_CACHE_KEY);
+            return cached ? JSON.parse(cached) : null;
+        } catch (e) {
+            return null;
+        }
+    }
+
+    function writeCachedCloudControl(cloudControl) {
+        try {
+            localStorage.setItem(CLOUD_CONTROL_CACHE_KEY, JSON.stringify({
+                allow: cloudControl.allow,
+                message: cloudControl.message || '',
+                updatedAt: Date.now()
+            }));
+        } catch (e) {
+            // 缓存失败不影响云端控制
+        }
+    }
+
     // Gitee云端禁止播放时，隐藏整个页面并展示独立提示
     function showCloudBlockedPage(message) {
         let mask = document.getElementById('cloud-play-control-overlay');
@@ -1012,8 +1034,13 @@
     function startCloudControlPrecheck() {
         if (!CLOUD_CONTROL_URL) return;
 
-        showCloudBlockedPage('正在检查访问权限...');
+        const cachedControl = readCachedCloudControl();
+        if (cachedControl && !cachedControl.allow) {
+            showCloudBlockedPage(cachedControl.message || '云端规则已限制播放，请稍后再试。');
+        }
+
         getCloudPlayControl().then((cloudControl) => {
+            writeCachedCloudControl(cloudControl);
             if (!cloudControl.allow) {
                 console.log('🚫 云端播放控制已禁止访问播放页');
                 showCloudBlockedPage(cloudControl.message || '云端规则已限制播放，请稍后再试。');
@@ -1133,6 +1160,7 @@
         });
 
         const cloudControl = await getCloudPlayControl();
+        writeCachedCloudControl(cloudControl);
         if (getCurrentVideoBvid() !== bvid) return;
         if (!cloudControl.allow) {
             console.log('🚫 云端播放控制已禁止播放当前视频');
