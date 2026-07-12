@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         B站自定义播放页
 // @namespace    http://tampermonkey.net/
-// @version      1.0.6
+// @version      1.0.7
 // @description  B站播放页定制：云端时间窗口、右侧推荐、结束页推荐、UP屏蔽与播放保护
 // @author       You
 // @match        https://www.bilibili.com/video/*
@@ -695,9 +695,9 @@
             }
         },
 
-        showPlayerBlock(message) {
+        renderPlayerOverlay({ icon, title, message }) {
             const playerRoot = Dom.playerRoot();
-            if (!playerRoot) return;
+            if (!playerRoot) return null;
             let overlay = document.getElementById('custom-play-page-player-block');
             if (!overlay) {
                 const currentPosition = getComputedStyle(playerRoot).position;
@@ -712,11 +712,28 @@
             }
             overlay.innerHTML = `
                 <div style="text-align:center;color:#999;user-select:none;">
-                    <div style="font-size:64px;margin-bottom:16px;opacity:.4;">📭</div>
-                    <div style="font-size:20px;font-weight:bold;color:#ccc;margin-bottom:8px;">视频已下架</div>
-                    <div style="font-size:14px;color:#666;">${Util.escapeHtml(message || '根据相关规定，该视频无法播放')}</div>
+                    <div style="font-size:64px;margin-bottom:16px;opacity:.4;">${icon}</div>
+                    <div style="font-size:20px;font-weight:bold;color:#ccc;margin-bottom:8px;">${Util.escapeHtml(title)}</div>
+                    <div style="font-size:14px;color:#666;">${Util.escapeHtml(message)}</div>
                 </div>
             `;
+            return overlay;
+        },
+
+        showCheckingBlock() {
+            return this.renderPlayerOverlay({
+                icon: '⏳',
+                title: '正在检查视频状态',
+                message: '请稍候，正在确认该视频是否可以播放'
+            });
+        },
+
+        showPlayerBlock(message) {
+            this.renderPlayerOverlay({
+                icon: '📭',
+                title: '视频已下架',
+                message: message || '根据相关规定，该视频无法播放'
+            });
             this.pauseVideo();
         },
 
@@ -776,6 +793,42 @@
             this.releaseVideo(video);
             this.restoreVideoVolume();
             return { allow: true, reason: 'allowed' };
+        }
+    };
+
+    const PrePlaybackCheck = {
+        start(runId, bvid) {
+            let active = true;
+            let observer = null;
+            const onPlay = event => {
+                if (!active || runId !== State.routeRunId || Util.getBvid() !== bvid || event.target?.tagName !== 'VIDEO') return;
+                PlaybackGuard.freezeVideo(event.target);
+            };
+            document.addEventListener('play', onPlay, true);
+            const rootPromise = Dom.waitFor(() => Dom.playerRoot(), { timeout: 10000, interval: 50 }).then(root => {
+                if (active && root && runId === State.routeRunId && Util.getBvid() === bvid) {
+                    PlaybackGuard.showCheckingBlock();
+                    observer = new MutationObserver(() => {
+                        if (active && runId === State.routeRunId && Util.getBvid() === bvid) PlaybackGuard.freezeVideo(Dom.playerVideo());
+                    });
+                    observer.observe(root, { childList: true, subtree: true });
+                }
+                return root;
+            });
+            const videoPromise = Dom.waitFor(() => Dom.playerVideo(), { timeout: 10000, interval: 50 }).then(video => {
+                if (active && video && runId === State.routeRunId && Util.getBvid() === bvid) PlaybackGuard.freezeVideo(video);
+                return video;
+            });
+            return {
+                rootPromise,
+                videoPromise,
+                stop() {
+                    active = false;
+                    document.removeEventListener('play', onPlay, true);
+                    observer?.disconnect();
+                    observer = null;
+                }
+            };
         }
     };
 
@@ -951,23 +1004,29 @@
             const bvid = Util.getBvid();
             if (!bvid) return;
             Log.info('启动播放页定制逻辑');
-            const videoPromise = Dom.waitFor(() => Dom.playerVideo(), { timeout: 10000, interval: 100 }).then(video => {
-                if (runId === State.routeRunId && Util.getBvid() === bvid) PlaybackGuard.freezeVideo(video);
-                return video;
-            });
+            const precheck = PrePlaybackCheck.start(runId, bvid);
             const cloudConfig = await CloudConfig.load();
-            if (runId !== State.routeRunId || Util.getBvid() !== bvid) return;
+            if (runId !== State.routeRunId || Util.getBvid() !== bvid) {
+                precheck.stop();
+                return;
+            }
 
             const playbackState = TimeWindow.state(cloudConfig);
             if (!playbackState.allow) {
+                precheck.stop();
                 PlaybackGuard.showCloudBlock(playbackState.message);
                 return;
             }
             PlaybackGuard.removeCloudBlock();
-            await videoPromise;
-            if (runId !== State.routeRunId || Util.getBvid() !== bvid) return;
+            await precheck.rootPromise;
+            await precheck.videoPromise;
+            if (runId !== State.routeRunId || Util.getBvid() !== bvid) {
+                precheck.stop();
+                return;
+            }
 
             await PlaybackGuard.run(cloudConfig);
+            precheck.stop();
             if (runId !== State.routeRunId || Util.getBvid() !== bvid) return;
             MiniPlayerGuard.start();
 
@@ -999,15 +1058,15 @@
 
         start() {
             injectBaseStyles();
+            this.run();
 
-            const startMain = () => {
+            const startRouteWatch = () => {
                 this.watchRoute();
-                this.run();
             };
-            if (document.readyState === 'loading') {
-                document.addEventListener('DOMContentLoaded', startMain, { once: true });
+            if (document.body) {
+                startRouteWatch();
             } else {
-                startMain();
+                document.addEventListener('DOMContentLoaded', startRouteWatch, { once: true });
             }
         }
     };
