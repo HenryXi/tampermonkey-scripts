@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         B站自定义播放页
 // @namespace    http://tampermonkey.net/
-// @version      1.0.7
+// @version      1.0.8
 // @description  B站播放页定制：云端时间窗口、右侧推荐、结束页推荐、UP屏蔽与播放保护
 // @author       You
 // @match        https://www.bilibili.com/video/*
@@ -672,16 +672,16 @@
 
         pauseVideo() {
             const video = Dom.playerVideo();
-            if (video) {
-                video.pause();
-                video.volume = 0;
-            }
+            if (video) this.freezeVideo(video);
         },
 
         freezeVideo(video) {
             if (!video) return;
             if (!video.dataset.customPlayPagePreviousMuted) {
                 video.dataset.customPlayPagePreviousMuted = video.muted ? 'true' : 'false';
+            }
+            if (!video.dataset.customPlayPagePreviousVolume) {
+                video.dataset.customPlayPagePreviousVolume = String(video.volume);
             }
             video.muted = true;
             video.pause();
@@ -692,6 +692,11 @@
             if (video.dataset.customPlayPagePreviousMuted) {
                 video.muted = video.dataset.customPlayPagePreviousMuted === 'true';
                 delete video.dataset.customPlayPagePreviousMuted;
+            }
+            if (video.dataset.customPlayPagePreviousVolume) {
+                const previousVolume = Number(video.dataset.customPlayPagePreviousVolume);
+                if (Number.isFinite(previousVolume)) video.volume = previousVolume;
+                delete video.dataset.customPlayPagePreviousVolume;
             }
         },
 
@@ -747,12 +752,7 @@
         },
 
         cleanupFrozenVideos() {
-            document.querySelectorAll('video[data-custom-play-page-previous-muted]').forEach(video => this.releaseVideo(video));
-        },
-
-        restoreVideoVolume() {
-            const video = Dom.playerVideo();
-            if (video && video.volume === 0) video.volume = 1;
+            document.querySelectorAll('video[data-custom-play-page-previous-muted], video[data-custom-play-page-previous-volume]').forEach(video => this.releaseVideo(video));
         },
 
         async run(cloudConfig) {
@@ -791,7 +791,6 @@
 
             this.removePlayerBlock();
             this.releaseVideo(video);
-            this.restoreVideoVolume();
             return { allow: true, reason: 'allowed' };
         }
     };
