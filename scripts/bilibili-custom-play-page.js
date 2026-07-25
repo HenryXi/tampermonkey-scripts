@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         B站自定义播放页
 // @namespace    http://tampermonkey.net/
-// @version      1.0.8
+// @version      1.0.9
 // @description  B站播放页定制：云端时间窗口、右侧推荐、结束页推荐、UP屏蔽与播放保护
 // @author       You
 // @match        https://www.bilibili.com/video/*
@@ -598,10 +598,11 @@
                 for (const element of document.querySelectorAll(selector)) {
                     if (this.isHeaderElement(element)) continue;
                     const rect = element.getBoundingClientRect();
-                    const looksRightSide = rect.width > 220 && rect.left > window.innerWidth * 0.45;
+                    const looksRightSide = rect.width > 220 && rect.left > window.innerWidth * 0.35;
                     const isKnownRightRoot = ['reco_list', 'danmukuBox'].includes(element.id) || element.classList.contains('right-container') || element.classList.contains('right-container-inner');
                     const hasRecommendContent = element.id === 'reco_list' || element.querySelector('.video-page-card-small, .rec-list, .next-play, [data-report*="related_rec"]');
-                    if (looksRightSide && (hasRecommendContent || isKnownRightRoot)) {
+                    const hasRenderedLayout = rect.width > 0 && rect.height > 0;
+                    if ((looksRightSide || (isKnownRightRoot && hasRenderedLayout)) && (hasRecommendContent || isKnownRightRoot)) {
                         return element.querySelector('#reco_list') || element;
                     }
                 }
@@ -832,6 +833,44 @@
     };
 
     const RightRecommendations = {
+        start(videos, runId, bvid) {
+            this.stop();
+            const tryInject = () => {
+                if (runId !== State.routeRunId || Util.getBvid() !== bvid || !this.activeVideos) {
+                    this.stop();
+                    return;
+                }
+                const container = Dom.safeRightContainer();
+                if (!container) return;
+                if (!container.querySelector('.custom-play-page-right-section')) {
+                    this.inject(this.activeVideos);
+                }
+            };
+
+            this.activeVideos = videos;
+            this.rightRunId = runId;
+            this.rightBvid = bvid;
+            tryInject();
+
+            if (document.body) {
+                this.observer = new MutationObserver(() => {
+                    clearTimeout(this.observerTimer);
+                    this.observerTimer = setTimeout(tryInject, 200);
+                });
+                this.observer.observe(document.body, { childList: true, subtree: true });
+            }
+            this.retryTimer = setInterval(tryInject, 1000);
+        },
+
+        stop() {
+            this.observer?.disconnect();
+            this.observer = null;
+            clearTimeout(this.observerTimer);
+            clearInterval(this.retryTimer);
+            this.retryTimer = null;
+            this.activeVideos = null;
+        },
+
         cleanup() {
             document.querySelectorAll('.custom-play-page-right-section').forEach(element => element.remove());
             document.querySelectorAll('[data-custom-play-page-hidden="true"]').forEach(element => {
@@ -851,6 +890,7 @@
                 return false;
             }
             if (Dom.isHeaderElement(container)) return false;
+            if (container.querySelector('.custom-play-page-right-section')) return true;
 
             this.cleanup();
             container.classList.add('custom-play-page-right-root');
@@ -995,6 +1035,7 @@
             State.recommendations = videos;
             await Dom.waitFor(() => RightRecommendations.inject(videos), { timeout: 10000, interval: 500 });
             if (runId !== State.routeRunId || Util.getBvid() !== bvid) return;
+            RightRecommendations.start(videos, runId, bvid);
             EndScreenRecommendations.bind(videos);
         },
 
@@ -1047,6 +1088,7 @@
                     PlaybackGuard.removeCloudBlock();
                     PlaybackGuard.removePlayerBlock();
                     PlaybackGuard.cleanupFrozenVideos();
+                    RightRecommendations.stop();
                     RightRecommendations.cleanup();
                     clearTimeout(State.routeTimer);
                     State.routeTimer = setTimeout(() => this.run(), 800);
