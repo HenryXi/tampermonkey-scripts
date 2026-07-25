@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         B站自定义播放页
 // @namespace    http://tampermonkey.net/
-// @version      1.0.9
+// @version      1.0.10
 // @description  B站播放页定制：云端时间窗口、右侧推荐、结束页推荐、UP屏蔽与播放保护
 // @author       You
 // @match        https://www.bilibili.com/video/*
@@ -14,6 +14,10 @@
 
 (function() {
     'use strict';
+
+    const INSTANCE_KEY = '__bilibiliCustomPlayPageLoaded';
+    if (window[INSTANCE_KEY]) return;
+    window[INSTANCE_KEY] = true;
 
     const Config = {
         cloudUrl: 'https://raw.giteeusercontent.com/beijiguangyong/config/raw/master/bilibili.json',
@@ -574,7 +578,9 @@
 
     const Dom = {
         isHeaderElement(element) {
-            return Boolean(element?.closest?.('.bili-header, .bili-header__bar, .right-entry, [class*="right-entry"], [class*="rightEntry"]'));
+            if (!element) return false;
+            const headerSelector = '.bili-header, .bili-header__bar, .right-entry, [class*="right-entry"], [class*="rightEntry"]';
+            return Boolean(element.matches?.(headerSelector) || element.closest?.(headerSelector) || element.querySelector?.(headerSelector));
         },
 
         playerRoot() {
