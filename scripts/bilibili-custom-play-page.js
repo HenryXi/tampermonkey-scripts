@@ -1,10 +1,11 @@
 // ==UserScript==
 // @name         B站自定义播放页
 // @namespace    http://tampermonkey.net/
-// @version      1.0.10
+// @version      1.0.11
 // @description  B站播放页定制：云端时间窗口、右侧推荐、结束页推荐、UP屏蔽与播放保护
 // @author       You
 // @match        https://www.bilibili.com/video/*
+// @match        https://www.bilibili.com/list/*
 // @grant        GM_xmlhttpRequest
 // @connect      api.bilibili.com
 // @connect      gitee.com
@@ -161,7 +162,9 @@
         },
 
         getBvid() {
-            return location.pathname.match(/\/video\/(BV[a-zA-Z0-9]+)/)?.[1] || null;
+            return location.pathname.match(/\/video\/(BV[a-zA-Z0-9]+)/)?.[1]
+                || new URLSearchParams(location.search).get('bvid')?.match(/^BV[a-zA-Z0-9]+$/)?.[0]
+                || null;
         }
     };
 
