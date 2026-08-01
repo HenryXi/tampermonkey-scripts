@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         B站自定义播放页
 // @namespace    http://tampermonkey.net/
-// @version      1.0.13
+// @version      1.0.14
 // @description  B站播放页定制：云端时间窗口、右侧推荐、结束页推荐、UP屏蔽与播放保护
 // @author       You
 // @match        https://www.bilibili.com/video/*
@@ -1136,9 +1136,10 @@
             const guardResult = await PlaybackGuard.run(cloudConfig);
             precheck.stop();
             if (runId !== State.routeRunId || Util.getBvid() !== bvid) return;
-            if (!guardResult.allow) return;
-            PlaybackGate.allow(bvid);
-            MiniPlayerGuard.start();
+            if (guardResult.allow) {
+                PlaybackGate.allow(bvid);
+                MiniPlayerGuard.start();
+            }
 
             this.renderRecommendations(runId, bvid, cloudConfig).catch(error => {
                 Log.warn('渲染推荐视频失败', error);
