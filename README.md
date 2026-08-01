@@ -55,7 +55,7 @@
 
 安装 `scripts/bilibili-history-export.user.js` 后：
 
-1. 登录 B 站并打开 `https://www.bilibili.com/account/history`
+1. 登录 B 站并打开 `https://www.bilibili.com/history`
 2. 点击页面右下角的「导出全部 BV」按钮
 3. 脚本会以 500ms 间隔自动分页读取全部可用历史记录
 4. 读取完成后下载 `bilibili-history-bvid-日期-时间.txt`

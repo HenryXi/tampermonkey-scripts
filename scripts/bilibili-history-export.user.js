@@ -1,9 +1,10 @@
 // ==UserScript==
 // @name         B站历史记录BV导出
 // @namespace    https://github.com/HenryXi/tampermonkey-scripts
-// @version      1.0.0
+// @version      1.0.1
 // @description  一键导出B站账号历史记录中的全部BV号，自动分页并去重
 // @author       HenryXi
+// @match        https://www.bilibili.com/history*
 // @match        https://www.bilibili.com/account/history*
 // @grant        GM_xmlhttpRequest
 // @connect      api.bilibili.com
@@ -68,7 +69,7 @@
                 anonymous: false,
                 headers: {
                     Accept: 'application/json, text/plain, */*',
-                    Referer: 'https://www.bilibili.com/account/history'
+                    Referer: 'https://www.bilibili.com/history'
                 },
                 onload(response) {
                     if (response.status < 200 || response.status >= 300) {
