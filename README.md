@@ -25,7 +25,7 @@
 
 1. 在 Gitee 新建一个 JSON 文件，例如 `bilibili.json`
 2. 点击文件的「原始数据」，复制形如 `https://gitee.com/用户名/仓库/raw/master/bilibili.json` 的地址
-3. 填入脚本顶部配置 `CLOUD_CONTROL_URL`
+3. 填入脚本顶部配置 `Config.cloudUrl`
 
 推荐配置格式：
 

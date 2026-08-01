@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         B站自定义播放页
 // @namespace    http://tampermonkey.net/
-// @version      1.0.11
+// @version      1.0.12
 // @description  B站播放页定制：云端时间窗口、右侧推荐、结束页推荐、UP屏蔽与播放保护
 // @author       You
 // @match        https://www.bilibili.com/video/*
@@ -35,8 +35,7 @@
         uploaderRequestInterval: 1500,
         uploaderMaxRetries: 2,
         recommendationCacheKey: 'bilibili_custom_play_page_recommendation_cache',
-        recommendationCacheTtl: 12 * 60 * 60 * 1000,
-        cloudCacheKey: 'bilibili_custom_play_page_cloud_cache'
+        recommendationCacheTtl: 12 * 60 * 60 * 1000
     };
 
     const State = {
@@ -47,7 +46,10 @@
         endListenerVideo: null,
         miniObserver: null,
         routeObserver: null,
-        routeTimer: null
+        routeTimer: null,
+        playerBlockObserver: null,
+        playerBlockPlayHandler: null,
+        playerBlockMessage: ''
     };
 
     function injectBaseStyles() {
@@ -226,23 +228,6 @@
             }
         },
 
-        readCache() {
-            try {
-                const cached = localStorage.getItem(Config.cloudCacheKey);
-                return cached ? JSON.parse(cached) : null;
-            } catch (error) {
-                return null;
-            }
-        },
-
-        writeCache(config) {
-            try {
-                localStorage.setItem(Config.cloudCacheKey, JSON.stringify({ ...config, cachedAt: Date.now() }));
-            } catch (error) {
-                Log.warn('写入云端配置缓存失败', error);
-            }
-        },
-
         async load() {
             if (State.cloudPromise) return State.cloudPromise;
             State.cloudPromise = (async () => {
@@ -253,9 +238,7 @@
                         timeout: Config.cloudTimeout,
                         headers: { 'Cache-Control': 'no-cache', 'Pragma': 'no-cache' }
                     });
-                    const config = this.parse(text);
-                    this.writeCache(config);
-                    return config;
+                    return this.parse(text);
                 } catch (error) {
                     Log.warn('读取云端配置失败，使用默认配置并允许播放', error);
                     return this.fallback();
@@ -714,6 +697,10 @@
             const playerRoot = Dom.playerRoot();
             if (!playerRoot) return null;
             let overlay = document.getElementById('custom-play-page-player-block');
+            if (overlay && overlay.parentElement !== playerRoot) {
+                overlay.remove();
+                overlay = null;
+            }
             if (!overlay) {
                 const currentPosition = getComputedStyle(playerRoot).position;
                 if (currentPosition === 'static') {
@@ -744,15 +731,58 @@
         },
 
         showPlayerBlock(message) {
+            const blockMessage = message || '根据相关规定，该视频无法播放';
             this.renderPlayerOverlay({
                 icon: '📭',
                 title: '视频已下架',
-                message: message || '根据相关规定，该视频无法播放'
+                message: blockMessage
             });
-            this.pauseVideo();
+            this.startPlayerBlockGuard(blockMessage);
+        },
+
+        startPlayerBlockGuard(message) {
+            State.playerBlockMessage = message;
+            if (!State.playerBlockPlayHandler) {
+                State.playerBlockPlayHandler = event => {
+                    if (State.playerBlockMessage && event.target?.tagName === 'VIDEO') {
+                        this.freezeVideo(event.target);
+                    }
+                };
+                document.addEventListener('play', State.playerBlockPlayHandler, true);
+            }
+            if (!State.playerBlockObserver) {
+                State.playerBlockObserver = new MutationObserver(() => this.enforcePlayerBlock());
+                State.playerBlockObserver.observe(document.documentElement, { childList: true, subtree: true });
+            }
+            this.enforcePlayerBlock();
+        },
+
+        enforcePlayerBlock() {
+            if (!State.playerBlockMessage) return;
+            const playerRoot = Dom.playerRoot();
+            const overlay = document.getElementById('custom-play-page-player-block');
+            if (playerRoot && overlay?.parentElement !== playerRoot) {
+                this.renderPlayerOverlay({
+                    icon: '📭',
+                    title: '视频已下架',
+                    message: State.playerBlockMessage
+                });
+            }
+            document.querySelectorAll('video').forEach(video => this.freezeVideo(video));
+        },
+
+        stopPlayerBlockGuard() {
+            if (State.playerBlockPlayHandler) {
+                document.removeEventListener('play', State.playerBlockPlayHandler, true);
+                State.playerBlockPlayHandler = null;
+            }
+            State.playerBlockObserver?.disconnect();
+            State.playerBlockObserver = null;
+            State.playerBlockMessage = '';
         },
 
         removePlayerBlock() {
+            this.stopPlayerBlockGuard();
             document.getElementById('custom-play-page-player-block')?.remove();
             const playerRoot = Dom.playerRoot();
             if (playerRoot?.dataset.customPlayPagePositionFixed === 'true') {
