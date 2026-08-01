@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         B站自定义播放页
 // @namespace    http://tampermonkey.net/
-// @version      1.0.12
+// @version      1.0.13
 // @description  B站播放页定制：云端时间窗口、右侧推荐、结束页推荐、UP屏蔽与播放保护
 // @author       You
 // @match        https://www.bilibili.com/video/*
@@ -41,12 +41,15 @@
     const State = {
         cloudPromise: null,
         recommendations: [],
-        currentUrl: location.href,
+        currentBvid: null,
+        allowedBvid: null,
         routeRunId: 0,
         endListenerVideo: null,
         miniObserver: null,
         routeObserver: null,
+        routeInterval: null,
         routeTimer: null,
+        playbackGateHandler: null,
         playerBlockObserver: null,
         playerBlockPlayHandler: null,
         playerBlockMessage: ''
@@ -871,6 +874,30 @@
         }
     };
 
+    const PlaybackGate = {
+        start() {
+            if (State.playbackGateHandler) return;
+            State.playbackGateHandler = event => {
+                const bvid = Util.getBvid();
+                if ((!bvid || State.allowedBvid !== bvid) && event.target?.tagName === 'VIDEO') {
+                    PlaybackGuard.freezeVideo(event.target);
+                }
+            };
+            document.addEventListener('play', State.playbackGateHandler, true);
+        },
+
+        reset() {
+            State.allowedBvid = null;
+            PlaybackGuard.pauseVideo();
+        },
+
+        allow(bvid) {
+            if (Util.getBvid() !== bvid) return;
+            State.allowedBvid = bvid;
+            PlaybackGuard.cleanupFrozenVideos();
+        }
+    };
+
     const RightRecommendations = {
         start(videos, runId, bvid) {
             this.stop();
@@ -1079,9 +1106,11 @@
         },
 
         async run() {
-            const runId = ++State.routeRunId;
             const bvid = Util.getBvid();
             if (!bvid) return;
+            State.currentBvid = bvid;
+            PlaybackGate.reset();
+            const runId = ++State.routeRunId;
             Log.info('启动播放页定制逻辑');
             const precheck = PrePlaybackCheck.start(runId, bvid);
             const cloudConfig = await CloudConfig.load();
@@ -1104,9 +1133,11 @@
                 return;
             }
 
-            await PlaybackGuard.run(cloudConfig);
+            const guardResult = await PlaybackGuard.run(cloudConfig);
             precheck.stop();
             if (runId !== State.routeRunId || Util.getBvid() !== bvid) return;
+            if (!guardResult.allow) return;
+            PlaybackGate.allow(bvid);
             MiniPlayerGuard.start();
 
             this.renderRecommendations(runId, bvid, cloudConfig).catch(error => {
@@ -1116,38 +1147,35 @@
 
         watchRoute() {
             if (State.routeObserver) return;
-            let lastBvid = Util.getBvid();
-            State.routeObserver = new MutationObserver(() => {
+            const checkRoute = () => {
                 const currentBvid = Util.getBvid();
-                if (currentBvid && currentBvid !== lastBvid) {
-                    lastBvid = currentBvid;
-                    State.cloudPromise = null;
-                    State.endListenerVideo = null;
-                    MiniPlayerGuard.stop();
-                    PlaybackGuard.removeCloudBlock();
-                    PlaybackGuard.removePlayerBlock();
-                    PlaybackGuard.cleanupFrozenVideos();
-                    RightRecommendations.stop();
-                    RightRecommendations.cleanup();
-                    clearTimeout(State.routeTimer);
-                    State.routeTimer = setTimeout(() => this.run(), 800);
-                }
-            });
-            State.routeObserver.observe(document.body, { childList: true, subtree: true });
+                if (currentBvid === State.currentBvid) return;
+                State.currentBvid = currentBvid;
+                State.routeRunId++;
+                State.cloudPromise = null;
+                State.endListenerVideo = null;
+                PlaybackGate.reset();
+                MiniPlayerGuard.stop();
+                PlaybackGuard.removeCloudBlock();
+                PlaybackGuard.removePlayerBlock();
+                PlaybackGuard.cleanupFrozenVideos();
+                PlaybackGuard.pauseVideo();
+                RightRecommendations.stop();
+                RightRecommendations.cleanup();
+                clearTimeout(State.routeTimer);
+                if (currentBvid) State.routeTimer = setTimeout(() => this.run(), 0);
+            };
+            State.routeObserver = new MutationObserver(checkRoute);
+            State.routeObserver.observe(document.documentElement, { childList: true, subtree: true });
+            State.routeInterval = setInterval(checkRoute, 250);
+            checkRoute();
         },
 
         start() {
             injectBaseStyles();
+            PlaybackGate.start();
             this.run();
-
-            const startRouteWatch = () => {
-                this.watchRoute();
-            };
-            if (document.body) {
-                startRouteWatch();
-            } else {
-                document.addEventListener('DOMContentLoaded', startRouteWatch, { once: true });
-            }
+            this.watchRoute();
         }
     };
 
