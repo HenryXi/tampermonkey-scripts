@@ -8,6 +8,7 @@
 |----------|----------|----------|
 | [B站显示UP主粉丝数](scripts/bilibili-show-fans-count.user.js) | bilibili.com 首页、搜索页 | 在首页和搜索页每个视频卡片下方显示UP主的粉丝数 |
 | [B站自定义播放页](scripts/bilibili-custom-play-page.js) | bilibili.com 视频播放页、列表播放页 | 新版播放页定制脚本：云端时间窗口、右侧推荐、结束页推荐、UP屏蔽、推荐缓存、禁用迷你播放器 |
+| [B站历史记录BV导出](scripts/bilibili-history-export.user.js) | bilibili.com 历史记录页 | 自动分页读取全部可用观看历史，去重并导出BV号TXT文件 |
 | [B站自定义推荐视频（历史参考）](scripts/bilibili-custom-recommendations.user.js) | bilibili.com 视频播放页 | 旧版播放页脚本，仅作为历史参考；建议关闭，后续可删除 |
 | [B站课程隐藏购买提醒](scripts/bilibili-cheese-remove-toast.user.js) | bilibili.com 课程播放页 | 隐藏课程播放页的购买提醒弹窗 |
 | [B站自定义首页](scripts/bilibili-custom-homepage.user.js) | api.bilibili.com 推荐接口 | 拦截推荐API，用自定义页面展示视频列表，过滤短视频并按时长排序 |
@@ -50,6 +51,19 @@
 
 推荐视频会缓存到浏览器本地存储，有效期 12 小时；电脑重启后通常仍然保留，除非清理了浏览器站点数据、无痕模式数据或扩展数据。
 
+## B站历史记录BV导出
+
+安装 `scripts/bilibili-history-export.user.js` 后：
+
+1. 登录 B 站并打开 `https://www.bilibili.com/account/history`
+2. 点击页面右下角的「导出全部 BV」按钮
+3. 脚本会以 500ms 间隔自动分页读取全部可用历史记录
+4. 读取完成后下载 `bilibili-history-bvid-日期-时间.txt`
+
+TXT 文件每行包含一个去重后的 BV 号，顺序为最近观看到更早观看。页面中的「今天」「昨天」「近一周」分组不会限制导出范围。
+
+如果请求超时、网络失败、账号未登录或 B 站接口返回错误，脚本会立即停止并提示失败原因，不会下载不完整的文件。
+
 ## 目录结构
 
 ```
@@ -58,6 +72,7 @@ tampermonkey-scripts/
 └── scripts/
     ├── bilibili-show-fans-count.user.js          # B站首页/搜索页显示UP主粉丝数
     ├── bilibili-custom-play-page.js              # B站新版播放页定制脚本
+    ├── bilibili-history-export.user.js            # B站历史记录BV导出
     ├── bilibili-custom-recommendations.user.js   # B站播放页自定义推荐视频
     ├── bilibili-cheese-remove-toast.user.js      # B站课程播放页隐藏购买提醒
     ├── bilibili-custom-homepage.user.js          # B站自定义首页（拦截推荐API）
